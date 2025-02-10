@@ -4,6 +4,7 @@ import {
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
+import * as fastifyCors from '@fastify/cors';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -11,7 +12,15 @@ async function bootstrap() {
     new FastifyAdapter()
   );
 
-  const port = process.env.PORT ?? 3000; // Use the PORT environment variable or fallback to 3000
-  await app.listen(port, '0.0.0.0'); // Bind to 0.0.0.0 for external access
+  // Enable CORS for all origins (or you can specify the frontend URL if you need)
+  app.register(fastifyCors, {
+    origin: 'http://localhost:3000', // You can replace '*' with your frontend URL if needed
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
+    credentials: true, // Optional, for handling cookies or tokens
+  });
+
+  const port = process.env.PORT ?? 4000;
+  await app.listen(port, '0.0.0.0'); // Make it accessible externally
 }
 bootstrap();
