@@ -1,0 +1,56 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  firstName String
+  lastName  String
+  phone     String    @unique
+  password  String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  roles     Role[]    @relation("UserRoles")
+  isPremium Boolean   @default(false)
+  plan      Plan      @default(free)
+  houseAds  HouseAd[] @relation("UserHouseAds") // One user -> Many house ads
+}
+
+model HouseAd {
+  id                    String   @id @default(cuid()) 
+  title                 String
+  description           String
+  location             String?  // Optional, as per your requirements
+  price                 Float
+  houseType            String   // String field for house type: "rental" or "sale"
+  numberOfBedrooms     Int?     // Optional, as per your requirements
+  numberOfBathrooms    Int?     // Optional, as per your requirements
+  houseRentalCapacity  String
+  isFurnished          Boolean? // Optional, for furnished status
+  houseCondition       String?  // Optional, for house condition (e.g., new, old)
+  images               String[] // Array of image URLs (stored as strings)
+  postedBy    User     @relation(fields: [userId], references: [id], name: "UserHouseAds") // Many ads -> One user
+  userId               String
+  isAvailable          Boolean  @default(true) // Tracks availability
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model Role {
+  id    String  @id @default(cuid())
+  name  String  @unique
+  users User[]  @relation("UserRoles")
+}
+
+enum Plan {
+  free
+  bronze
+  silver
+  gold
+}
