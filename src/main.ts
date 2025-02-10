@@ -14,7 +14,7 @@ async function bootstrap() {
 
   // Enable CORS for all origins (or you can specify the frontend URL if you need)
   app.register(fastifyCors, {
-    origin: process.env.COR_ORIGN, // You can replace '*' with your frontend URL if needed
+    origin: '*', // You can replace '*' with your frontend URL if needed
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
     credentials: true, // Optional, for handling cookies or tokens
