@@ -14,7 +14,14 @@ async function bootstrap() {
 
   // Enable CORS for all origins (or you can specify the frontend URL if you need)
   app.register(fastifyCors, {
-    origin: 'https://pivota.vercel.app/', // You can replace '*' with your frontend URL if needed
+    origin: (origin, cb) => {
+    const allowedOrigins = ['https://pivota.vercel.app', 'http://localhost:3000'];
+    if (!origin || allowedOrigins.includes(origin)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Not allowed by CORS'), false);
+    }
+  },
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
     credentials: true, // Optional, for handling cookies or tokens
