@@ -30,6 +30,7 @@
     "@prisma/client": "^6.3.1",
     "@types/passport-jwt": "^4.0.1",
     "bcryptjs": "^2.4.3",
+    "dayjs": "^1.11.13",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
@@ -48,7 +49,7 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",
-    "@types/node": "^22.10.7",
+    "@types/node": "^22.13.1",
     "@types/passport-local": "^1.0.38",
     "@types/supertest": "^6.0.2",
     "eslint": "^9.18.0",
@@ -83,5 +84,8 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
+  },
+  "prisma": {
+    "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
   }
 }

@@ -13,39 +13,80 @@ model User {
   firstName String
   lastName  String
   phone     String    @unique
-  password  String    @unique
+  password  String
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  roles     Role[]    @relation("UserRoles")
   isPremium Boolean   @default(false)
   plan      Plan      @default(free)
-  houseAds  HouseAd[] @relation("UserHouseAds") // One user -> Many house ads
+
+  // Relationships
+  roles     UserRole[] // Many-to-Many User <-> Roles
+  houseAds  HouseAd[]  @relation("UserHouseAds")
+  refreshTokens RefreshToken[] // One-to-Many User <-> Refresh Tokens
+}
+
+model Role {
+  id          String          @id @default(cuid())
+  name        String          @unique
+  description String?
+  users       UserRole[]      // Many-to-Many Role <-> Users
+  permissions RolePermission[] // Many-to-Many Role <-> Permissions
+}
+
+model Permission {
+  id          String          @id @default(cuid())
+  name        String          @unique
+  description String?
+  roles       RolePermission[] // Many-to-Many Permission <-> Roles
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId]) // Composite key to ensure uniqueness
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId]) // Composite key to ensure uniqueness
 }
 
 model HouseAd {
   id                    String   @id @default(cuid()) 
   title                 String
   description           String
-  location             String?  // Optional, as per your requirements
+  location             String?
   price                 Float
-  houseType            String   // String field for house type: "rental" or "sale"
-  numberOfBedrooms     Int?     // Optional, as per your requirements
-  numberOfBathrooms    Int?     // Optional, as per your requirements
+  houseType            String
+  numberOfBedrooms     Int?
+  numberOfBathrooms    Int?
   houseRentalCapacity  String
-  isFurnished          Boolean? // Optional, for furnished status
-  houseCondition       String?  // Optional, for house condition (e.g., new, old)
-  images               String[] // Array of image URLs (stored as strings)
-  postedBy    User     @relation(fields: [userId], references: [id], name: "UserHouseAds") // Many ads -> One user
+  isFurnished          Boolean?
+  houseCondition       String?
+  images               String[]
+  postedBy    User     @relation(fields: [userId], references: [id], name: "UserHouseAds")
   userId               String
-  isAvailable          Boolean  @default(true) // Tracks availability
+  isAvailable          Boolean  @default(true)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 }
 
-model Role {
-  id    String  @id @default(cuid())
-  name  String  @unique
-  users User[]  @relation("UserRoles")
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, expiresAt]) // Add an index to optimize querying by userId and expiration date
 }
 
 enum Plan {
