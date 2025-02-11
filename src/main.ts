@@ -7,6 +7,7 @@ import { AppModule } from './app.module';
 import * as fastifyCors from '@fastify/cors';
 
 async function bootstrap() {
+  console.log('Application is starting...')
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter()
