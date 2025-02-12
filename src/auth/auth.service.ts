@@ -139,6 +139,7 @@ export class AuthService {
 
   // ------------------ LOGIN FUNCTION ------------------
   async login(email: string, password: string) {
+    // Find user by email
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: {
@@ -146,11 +147,11 @@ export class AuthService {
           select: {
             role: {
               select: {
-                name: true, // Select the 'name' field from the Role model
-              }
-            }
-          }
-        }
+                name: true,
+              },
+            },
+          },
+        },
       },
     });
   
@@ -158,40 +159,35 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password.');
     }
   
+    // Check if password is correct
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid email or password.');
     }
   
-    // Extract role names from the user roles relation
+    // Extract role names from the user roles
     const userRoles = user.roles.map(role => role.role.name);
-  
-    // Check if the user has allowed roles
-    const allowedRoles = ["user", "employer", "landlord", "serviceProvider"];
-    const isAuthorized = userRoles.some(role => allowedRoles.includes(role));
-  
-    if (!isAuthorized) {
-      throw new UnauthorizedException("You do not have permission to access this application.");
-    }
-  
-    // Generate access and refresh tokens
+    
+    // Generate the JWT tokens
     const jwtResponse = this.generateJwt(user);
   
-    // Save the refresh token to the database
+    // Save the refresh token in the database
     await this.prisma.refreshToken.create({
       data: {
         userId: user.id,
         token: jwtResponse.refresh_token,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Expires in 7 days (refresh token validity)
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days expiration
       },
     });
   
+    // Return the tokens along with roles
     return {
       access_token: jwtResponse.access_token,
-      refresh_token: jwtResponse.refresh_token, // Return the refresh token as well
-      roles: userRoles, // Now returning the correct roles
+      refresh_token: jwtResponse.refresh_token,
+      roles: userRoles,
     };
   }
+  
   
 
 // ------------------ GENERATE JWT FUNCTION ------------------

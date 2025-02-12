@@ -17,5 +17,10 @@
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false
-  }
+  },
+
+  "include": [
+    "src/**/*.ts",  // Include all TypeScript files
+    "fastify.d.ts"  // Make sure this file is included
+  ]
 }
