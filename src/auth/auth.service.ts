@@ -1,12 +1,16 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
 const dayjs = require('dayjs');
 import * as crypto from 'crypto';
 
-import { SignupSchema } from './dto/signup.dto';
+
 import { PrismaService } from './prisma.service';
 import { User } from '@prisma/client';
+import { validate } from 'class-validator';
+import { LoginDto } from './dto/login.dto';
+import { SignupDto } from './dto/signup.dto';
+
 
 @Injectable()
 export class AuthService {
@@ -18,87 +22,84 @@ export class AuthService {
     console.log(process.env.JWT_SECRET);
   }
 
+  // ------------------ USER VALIDATION ------------------
   async validateUser(email: string, password: string): Promise<User> {
-    // Find the user by email
     const user = await this.prisma.user.findUnique({
       where: { email },
-      include: { roles: true }, // Optionally include roles for role-based checks
+      include: { roles: true },
     });
 
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // Compare the provided password with the stored hashed password
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // Return the user if credentials are valid
     return user;
   }
 
-  async signup(signupDto: any) {
-    const parsedData = SignupSchema.safeParse(signupDto);
-  
-    if (!parsedData.success) {
-      console.log(parsedData.error.errors)
-      return { message: "Validation failed", errors: parsedData.error.errors, status: 400 };
+
+   // ------------------ SIGNUP FUNCTION ------------------
+   async signup(signupDto: SignupDto) {
+    // Validate the signup DTO
+    const errors = await validate(signupDto); // Validate the DTO using class-validator
+
+    if (errors.length > 0) {
+      return { message: 'Validation failed', errors, status: 400 };
     }
-  
-    const { firstName, lastName, email, password, confirmPassword, phone, plan, roles } = parsedData.data;
-  
+
+    const { firstName, lastName, email, password, confirmPassword, phone, plan, roles } = signupDto;
+
     if (password !== confirmPassword) {
-      return { message: "Passwords do not match", status: 400 };
+      throw new BadRequestException('Passwords do not match');
     }
-  
+
     const existingUserByEmail = await this.prisma.user.findUnique({ where: { email } });
     if (existingUserByEmail) {
-      return { message: "An account with this email already exists.", status: 409 };
+      throw new BadRequestException('An account with this email already exists.');
     }
-  
+
     const existingPhoneNumber = await this.prisma.user.findUnique({ where: { phone } });
     if (existingPhoneNumber) {
-      return { message: "An account with this phone number already exists.", status: 409 };
+      throw new BadRequestException('An account with this phone number already exists.');
     }
-  
+
     const hashedPassword = await bcrypt.hash(password, 12);
-  
+
     const rolesPerPlan = {
-      free: ["user"], // Free plan only allows "user" role
-      bronze: ["landlord", "employer", "serviceProvider"], // 1 premium role limit
-      silver: ["landlord", "employer", "serviceProvider"], // 2 premium roles limit
-      gold: ["landlord", "employer", "serviceProvider"], // 3 premium roles limit
+      free: ['user'],
+      bronze: ['landlord', 'employer', 'serviceProvider'],
+      silver: ['landlord', 'employer', 'serviceProvider'],
+      gold: ['landlord', 'employer', 'serviceProvider'],
     };
-  
-    let roleNames = ["user"]; // Every user gets the "user" role by default
-  
+
+    let roleNames = ['user'];
+
     if (roles) {
-      // Filter out any roles that don't match the allowed roles for the selected plan
       const validRoles = roles.filter(role => rolesPerPlan[plan]?.includes(role));
-  
+
       if (validRoles.length !== roles.length) {
-        return { message: "Some roles are invalid for your plan.", status: 400 };
+        throw new BadRequestException('Some roles are invalid for your plan.');
       }
-  
-      // Enforce the plan's limit on roles
+
       if (validRoles.length > (plan === 'bronze' ? 1 : plan === 'silver' ? 2 : 3)) {
-        return { message: `You can select up to ${plan === 'bronze' ? 1 : plan === 'silver' ? 2 : 3} roles for your plan.`, status: 400 };
+        throw new BadRequestException(`You can select up to ${plan === 'bronze' ? 1 : plan === 'silver' ? 2 : 3} roles for your plan.`);
       }
-  
+
       roleNames = [...roleNames, ...validRoles];
     }
-  
-    // Fetch roles from the database
+
     const roleRecords = await this.prisma.role.findMany({
       where: { name: { in: roleNames } },
     });
-  
+
     if (roleRecords.length !== roleNames.length) {
-      return { message: "One or more roles do not exist.", status: 400 };
+      throw new BadRequestException('One or more roles do not exist.');
     }
-  
+
     const newUserData = {
       firstName,
       lastName,
@@ -106,40 +107,36 @@ export class AuthService {
       password: hashedPassword,
       phone,
       plan,
-      isPremium: plan !== "free",
+      isPremium: plan !== 'free',
     };
-  
-    // Create the new user
+
     const user = await this.prisma.user.create({
       data: newUserData,
     });
-  
-    // Create the user roles for the user
+
     const rolesForUser = await this.prisma.role.findMany({
       where: { name: { in: roleNames } },
     });
-  
-    //saving roles for user in the UserRole table ... i.e., assigning roles to the user
+
     await this.prisma.userRole.createMany({
       data: rolesForUser.map(role => ({
         userId: user.id,
         roleId: role.id,
       })),
     });
-  
-    let successMessage = "Your account was created successfully.";
-    if (plan === "bronze") successMessage = "Your bronze premium membership has been created successfully.";
-    else if (plan === "silver") successMessage = "Your silver premium membership has been created successfully.";
-    else if (plan === "gold") successMessage = "Your gold premium membership has been created successfully.";
-  
+
+    let successMessage = 'Your account was created successfully.';
+    if (plan === 'bronze') successMessage = 'Your bronze premium membership has been created successfully.';
+    else if (plan === 'silver') successMessage = 'Your silver premium membership has been created successfully.';
+    else if (plan === 'gold') successMessage = 'Your gold premium membership has been created successfully.';
+
     return { user, message: successMessage, status: 201 };
   }
-  
-  
 
   // ------------------ LOGIN FUNCTION ------------------
-  async login(email: string, password: string) {
-    // Find user by email
+  async login(loginDto: LoginDto) {
+    const { email, password } = loginDto;
+
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: {
@@ -154,63 +151,55 @@ export class AuthService {
         },
       },
     });
-  
+
     if (!user) {
       throw new UnauthorizedException('Invalid email or password.');
     }
-  
-    // Check if password is correct
+
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid email or password.');
     }
-  
-    // Extract role names from the user roles
+
     const userRoles = user.roles.map(role => role.role.name);
-    
-    // Generate the JWT tokens
+
     const jwtResponse = this.generateJwt(user);
-  
-    // Save the refresh token in the database
+
     await this.prisma.refreshToken.create({
       data: {
         userId: user.id,
         token: jwtResponse.refresh_token,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days expiration
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
-  
-    // Return the tokens along with roles
+
     return {
       access_token: jwtResponse.access_token,
       refresh_token: jwtResponse.refresh_token,
       roles: userRoles,
     };
   }
-  
-  
 
-// ------------------ GENERATE JWT FUNCTION ------------------
-private generateJwt(user: any) {
-  const refreshToken = crypto.randomBytes(64).toString('hex'); // Generate a random refresh token
+  // ------------------ GENERATE JWT FUNCTION ------------------
+  private generateJwt(user: any) {
+    const refreshToken = crypto.randomBytes(64).toString('hex');
 
-  // Prepare the payload without 'exp' in the payload
-  const payload = {
-    userId: user.id,
-    email: user.email,
-    firstName: user.firstName,
-    roles: user.roles.map((role: any) => role.name),
-  };
+    const payload = {
+      userId: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      roles: user.roles.map((role: any) => role.name),
+    };
 
-  // Generate the access token
-  const access_token = this.jwtService.sign(payload, {
-    expiresIn: '1h', // Access token expires in 1 hour
-  });
+    const access_token = this.jwtService.sign(payload, {
+      expiresIn: '1h',
+    });
 
-  return {
-    access_token,
-    refresh_token: refreshToken, // Return the refresh token
-  };
+    return {
+      access_token,
+      refresh_token: refreshToken,
+    };
+  }
 }
 
-}
+

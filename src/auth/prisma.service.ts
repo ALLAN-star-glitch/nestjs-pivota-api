@@ -5,6 +5,13 @@ import { PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleDestroy, OnApplicationShutdown {
+  private _user: any;
+  public get user(): any {
+    return this._user;
+  }
+  public set user(value: any) {
+    this._user = value;
+  }
   constructor() {
     super();
   }
