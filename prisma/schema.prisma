@@ -21,8 +21,8 @@ model User {
 
   // Relationships
   roles     UserRole[] // Many-to-Many User <-> Roles
-  houseAds  HouseAd[]  @relation("UserHouseAds")
-  refreshTokens RefreshToken[] // One-to-Many User <-> Refresh Tokens
+  houseAds  HouseAd[]  @relation("UserHouseAds") // One-to-Many with HouseAds ,... a user can have multiple house ads
+  refreshTokens RefreshToken[] @relation("UserRefreshTokens") // One-to-Many with RefreshTokens ... a user can have multiple refresh tokens
 }
 
 model Role {
@@ -41,15 +41,15 @@ model Permission {
 }
 
 model UserRole {
-  userId String
-  roleId String
+  userId String //foreign key referencing User
+  roleId String //foreign key referencing Role
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
-  @@id([userId, roleId]) // Composite key to ensure uniqueness
+  @@id([userId, roleId]) // Composite key to ensure uniqueness (i.e., each user can only have a role only once)
 }
 
-model RolePermission {
+model RolePermission { //similar to UserRole
   roleId       String
   permissionId String
   role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
@@ -71,8 +71,8 @@ model HouseAd {
   isFurnished          Boolean?
   houseCondition       String?
   images               String[]
-  postedBy    User     @relation(fields: [userId], references: [id], name: "UserHouseAds")
-  userId               String
+  postedBy    User     @relation(fields: [userId], references: [id], name: "UserHouseAds") //many to one relationship linking a house ad to the user who posted it
+  userId               String //foreign key referencing the user
   isAvailable          Boolean  @default(true)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
@@ -84,9 +84,12 @@ model RefreshToken {
   userId    String
   createdAt DateTime @default(now())
   expiresAt DateTime
-  user      User     @relation(fields: [userId], references: [id])
+
+  //Relationship
+  user      User     @relation(fields: [userId], references: [id], name: "UserRefreshTokens") //many to one relationship ... a user can have multiple refresh tokens
 
   @@index([userId, expiresAt]) // Add an index to optimize querying by userId and expiration date
+
 }
 
 enum Plan {

@@ -6,13 +6,13 @@ import * as crypto from 'crypto';
 
 import { SignupSchema } from './dto/signup.dto';
 import { PrismaService } from './prisma.service';
-import { Role, User } from '@prisma/client';
+import { User } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jwtService: JwtService, // Injecting JwtService for signing tokens
+    private readonly jwtService: JwtService, // Injecting JwtService for signing tokens ... JwtService is used for generating tokens
   ) {
     console.log('AuthService is being initialized');
     console.log(process.env.JWT_SECRET);
@@ -119,6 +119,7 @@ export class AuthService {
       where: { name: { in: roleNames } },
     });
   
+    //saving roles for user in the UserRole table ... i.e., assigning roles to the user
     await this.prisma.userRole.createMany({
       data: rolesForUser.map(role => ({
         userId: user.id,
