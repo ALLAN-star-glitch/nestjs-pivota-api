@@ -6,6 +6,7 @@ import { ApiOperation, ApiResponse, ApiBody, ApiTags, ApiBearerAuth } from '@nes
 import { SignupDto } from './dto/signup.dto';
 import { validate } from 'class-validator';
 import { LoginDto } from './dto/login.dto';
+import { LoginResponseDto } from './dto/Login-Response.dto';
 
 @ApiTags('Auth') // Grouping routes under 'Auth' category
 @Controller('auth')
@@ -34,34 +35,41 @@ export class AuthController {
   // Login endpoint with JWT and cookies
   @HttpCode(HttpStatus.OK)
   @Post('login')
-  @ApiOperation({ summary: 'Login a user and return JWT tokens' }) // Operation summary for the login endpoint
-  @ApiBody({ type: Object, description: 'User login credentials', required: true }) // Documentation for the request body
-  @ApiResponse({ status: 200, description: 'Login successful and tokens returned.' }) // Success response
-  @ApiResponse({ status: 401, description: 'Invalid credentials.' }) // Failure response
+  @ApiOperation({ summary: 'Login a user and return JWT tokens' })
+  @ApiBody({ type: LoginDto, description: 'User login credentials', required: true })
+  @ApiResponse({ status: 200, description: 'Login successful and tokens returned.', type: LoginResponseDto })
+  @ApiResponse({ status: 401, description: 'Invalid credentials.' })
   async login(
-    @Body()  loginDto: LoginDto,
-    @Response() res: FastifyReply, // FastifyReply used for response handling
-  ) {
+    @Body() loginDto: LoginDto,
+    @Response() res: FastifyReply,
+  ): Promise<FastifyReply>{
     try {
-      const { email, password } = loginDto;
-      const { access_token, refresh_token } = await this.authService.login(loginDto);
-
-      // Set access_token and refresh_token in HTTP-only cookies
+      const { access_token, refresh_token, user } = await this.authService.login(loginDto);
+  
       res.setCookie('access_token', access_token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'strict',
         maxAge: 3600000, // 1 hour expiration for access token
       });
-
+  
       res.setCookie('refresh_token', refresh_token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'strict',
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days expiration for refresh token
       });
-
-      return res.send({ message: 'Login successful' });
+  
+      return res.send({
+        message: 'Login successful',
+        userId: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        plan: user.plan,
+        phone: user.phone,
+        roles: user.roles,
+        
+      });
     } catch (error) {
       console.error(error);
       return res.status(HttpStatus.UNAUTHORIZED).send({ message: 'Invalid credentials' });

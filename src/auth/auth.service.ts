@@ -136,35 +136,31 @@ export class AuthService {
   // ------------------ LOGIN FUNCTION ------------------
   async login(loginDto: LoginDto) {
     const { email, password } = loginDto;
-
+  
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: {
         roles: {
           select: {
-            role: {
-              select: {
-                name: true,
-              },
-            },
+            role: { select: { name: true } },
           },
         },
       },
     });
-
+  
     if (!user) {
       throw new UnauthorizedException('Invalid email or password.');
     }
-
+  
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid email or password.');
     }
-
+  
     const userRoles = user.roles.map(role => role.role.name);
-
+  
     const jwtResponse = this.generateJwt(user);
-
+  
     await this.prisma.refreshToken.create({
       data: {
         userId: user.id,
@@ -172,13 +168,24 @@ export class AuthService {
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
-
+  
     return {
+      message: 'Login successful',
       access_token: jwtResponse.access_token,
       refresh_token: jwtResponse.refresh_token,
-      roles: userRoles,
+      user: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phone: user.phone,
+        plan: user.plan,
+        isPremium: user.isPremium,
+        roles: userRoles,
+      },
     };
   }
+  
 
   // ------------------ GENERATE JWT FUNCTION ------------------
   private generateJwt(user: any) {
