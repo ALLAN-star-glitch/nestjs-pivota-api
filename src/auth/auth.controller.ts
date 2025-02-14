@@ -1,4 +1,4 @@
-import { Controller, Post, Body, HttpStatus, HttpCode, UseGuards, Response } from '@nestjs/common';
+import { Controller, Post, Body, HttpStatus, HttpCode, UseGuards, Response, Req, Get } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthGuard } from '@nestjs/passport'; // Passport guard for JWT
 import { FastifyReply } from 'fastify'; // FastifyReply type
@@ -7,11 +7,13 @@ import { SignupDto } from './dto/signup.dto';
 import { validate } from 'class-validator';
 import { LoginDto } from './dto/login.dto';
 import { LoginResponseDto } from './dto/Login-Response.dto';
+import { JwtService } from '@nestjs/jwt';
 
 @ApiTags('Auth') // Grouping routes under 'Auth' category
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {
+  constructor(private readonly authService: AuthService, 
+     private readonly jwtService: JwtService,) {
     console.log('AuthController initialized');
   }
 
@@ -48,8 +50,8 @@ export class AuthController {
   
       res.setCookie('access_token', access_token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        // secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
         maxAge: 3600000, // 1 hour expiration for access token
       });
   
@@ -76,16 +78,44 @@ export class AuthController {
     }
   }
 
-  // Protected route - only accessible if the user is authenticated
+
+  // New endpoint to get the user details
   @UseGuards(AuthGuard('jwt'))  // Protecting the route with the JWT Auth Guard
-  @Post('protected')
-  @ApiBearerAuth() // Indicates that this endpoint requires Bearer Auth (JWT)
-  @ApiOperation({ summary: 'Access a protected route' }) // Operation summary for the protected endpoint
-  @ApiResponse({ status: 200, description: 'Access granted to protected route.' }) // Success response
-  @ApiResponse({ status: 401, description: 'Unauthorized access.' }) // Unauthorized response
-  async protected(@Response() res: FastifyReply) {
-    return res.status(HttpStatus.OK).send({
-      message: 'This is a protected route.',
-    });
+  @Get('getUser')
+  @ApiBearerAuth() // This route requires Bearer Authentication
+  @ApiOperation({ summary: 'Get the current authenticated user' }) 
+  @ApiResponse({ status: 200, description: 'Successfully retrieved user data.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  async getUser(@Req() req: any, @Response() res: FastifyReply) {
+    try {
+      // Get the access token from the request's cookies
+      const accessToken = req.cookies['access_token'];
+
+      if (!accessToken) {
+        return res.status(HttpStatus.UNAUTHORIZED).send({
+          message: 'Access token not provided or expired',
+        });
+      }
+
+      // Verify the token
+      const decoded = this.jwtService.verify(accessToken);
+
+      // Get the user by decoded userId
+      const user = await this.authService.getUserById(decoded.userId);
+
+      if (!user) {
+        return res.status(HttpStatus.NOT_FOUND).send({
+          message: 'User not found.',
+        });
+      }
+
+      return res.status(HttpStatus.OK).send({ user });
+    } catch (error) {
+      return res.status(HttpStatus.UNAUTHORIZED).send({
+        message: 'Invalid or expired token',
+      });
+    }
   }
+
+ 
 }

@@ -157,7 +157,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password.');
     }
   
-    const userRoles = user.roles.map(role => role.role.name);
+    const userRoles = user.roles.map((role: { role: { name: String; }; }) => role.role.name);
   
     const jwtResponse = this.generateJwt(user);
   
@@ -192,11 +192,14 @@ export class AuthService {
     const refreshToken = crypto.randomBytes(64).toString('hex');
 
     const payload = {
+      plan: user.plan,
       userId: user.id,
       email: user.email,
       firstName: user.firstName,
-      roles: user.roles.map((role: any) => role.name),
+      roles: user.roles.map((userRole: any) => userRole.role.name),
     };
+
+ 
 
     const access_token = this.jwtService.sign(payload, {
       expiresIn: '1h',
@@ -207,6 +210,17 @@ export class AuthService {
       refresh_token: refreshToken,
     };
   }
+
+  // New method to get user by userId
+  async getUserById(userId: String): Promise<User | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { roles: true },  // Include roles if needed
+    });
+
+    return user;
+  }
+
 }
 
 
