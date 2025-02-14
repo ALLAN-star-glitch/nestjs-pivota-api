@@ -20,7 +20,7 @@ async function bootstrap() {
   // Enable CORS for frontend
   app.register(fastifyCors, {
     origin: (origin, cb) => {
-      const allowedOrigins = ['', 'http://localhost:3000'];
+      const allowedOrigins = ['https://nestjs-pivota-api.onrender.com', 'http://localhost:3000'];
       if (!origin || allowedOrigins.includes(origin)) {
         cb(null, true);
       } else {
@@ -53,7 +53,7 @@ async function bootstrap() {
  .setDescription('API documentation for the Pivota platform') // Description of your API
  .setVersion('1.0') // API version
  .addServer('http://localhost:4000/', 'Local environment') // Local server
- .addServer('https://production.yourapi.com/', 'Production environment') // Production server (replace with actual URL)
+ .addServer('https://nestjs-pivota-api.onrender.com/', 'Production environment') // Production server (replace with actual URL)
  .addTag('Auth', 'Authentication endpoints') // Add tags for grouping API endpoints
  .addTag('Users', 'User-related endpoints') // Another tag for grouping
  .build();
