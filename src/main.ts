@@ -20,7 +20,7 @@ async function bootstrap() {
   // Enable CORS for frontend
   app.register(fastifyCors, {
     origin: (origin, cb) => {
-      const allowedOrigins = ['https://nestjs-pivota-api.onrender.com', 'http://localhost:3000'];
+      const allowedOrigins = ['https://pivota-expressjs-platform.onrender.com', 'http://localhost:3000'];
       if (!origin || allowedOrigins.includes(origin)) {
         cb(null, true);
       } else {
