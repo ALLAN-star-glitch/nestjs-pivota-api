@@ -50,7 +50,7 @@ export class AuthController {
   
       res.setCookie('access_token', access_token, {
         httpOnly: true,
-        // secure: process.env.NODE_ENV === 'production',
+        secure: true,
         sameSite: 'lax',
         maxAge: 3600000, // 1 hour expiration for access token
       });
