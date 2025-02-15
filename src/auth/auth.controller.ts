@@ -51,14 +51,14 @@ export class AuthController {
       res.setCookie('access_token', access_token, {
         httpOnly: true,
         secure: true,
-        sameSite: 'none',
+        sameSite: 'lax',
         maxAge: 15 * 60 * 1000, // 15 expiration for access token
       });
   
       res.setCookie('refresh_token', refresh_token, {
         httpOnly: true,
         secure: true,
-        sameSite: 'none',
+        sameSite: 'lax',
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days expiration for refresh token
       });
   
