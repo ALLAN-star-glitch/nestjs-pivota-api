@@ -20,6 +20,7 @@ async function bootstrap() {
   // Enable CORS for frontend
   app.register(fastifyCors, {
     origin: (origin, cb) => {
+      //This is to allow apps from vercel and render to consume the api endpoints for testing purposes and debugging
       const allowedOrigins = ['https://pivota-expressjs-platform.onrender.com', 'http://localhost:3000', 'https://pivota.vercel.app/'];
       if (!origin || allowedOrigins.includes(origin)) {
         cb(null, true);
