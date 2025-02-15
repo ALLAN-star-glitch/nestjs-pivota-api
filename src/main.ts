@@ -6,9 +6,15 @@ import fastifyCookie from '@fastify/cookie'; // Corrected import for fastify-coo
 import helmet from '@fastify/helmet'; // Import Fastify Helmet
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
+import { readFileSync } from 'fs';
 
 async function bootstrap() {
   console.log('Application is starting...');
+
+  // const httpsOptions = {
+  //   key: readFileSync('src/localhost-key.pem'), // Private key file
+  //   cert: readFileSync('src/localhost.pem'), // SSL certificate file
+  // };      new FastifyAdapter({ https: httpsOptions }),
 
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
@@ -20,8 +26,7 @@ async function bootstrap() {
   // Enable CORS for frontend
   app.register(fastifyCors, {
     origin: (origin, cb) => {
-      //This is to allow apps from vercel and render to consume the api endpoints for testing purposes and debugging
-      const allowedOrigins = ['https://pivota-expressjs-platform.onrender.com', 'http://localhost:3000', 'https://pivota.vercel.app/'];
+      const allowedOrigins = ['https://pivota-expressjs-platform.onrender.com', 'https://localhost:3000'];
       if (!origin || allowedOrigins.includes(origin)) {
         cb(null, true);
       } else {
@@ -67,7 +72,10 @@ async function bootstrap() {
   const port = process.env.PORT ?? 4000;
   await app.listen(port, '0.0.0.0');
 
-  console.log(`Swagger running at http://localhost:${port}/api-docs`);
+
+  console.log(`Server running at **https://localhost:${port}**`);
+  console.log(`Swagger available at **https://localhost:${port}/api-docs**`);
+
 }
 
 bootstrap();

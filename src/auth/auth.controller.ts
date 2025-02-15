@@ -51,27 +51,31 @@ export class AuthController {
       res.setCookie('access_token', access_token, {
         httpOnly: true,
         secure: true,
-        sameSite: 'lax',
-        maxAge: 3600000, // 1 hour expiration for access token
+        sameSite: 'none',
+        maxAge: 15 * 60 * 1000, // 15 expiration for access token
       });
   
       res.setCookie('refresh_token', refresh_token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        secure: true,
+        sameSite: 'none',
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days expiration for refresh token
       });
   
-      return res.send({
-        message: 'Login successful',
-        userId: user.id,
+       // Wrap user details inside "user" object
+    return res.send({
+      message: 'Login successful',
+      user: { // This ensures response.user exists on frontend
+        id: user.id,
         firstName: user.firstName,
         lastName: user.lastName,
         plan: user.plan,
         phone: user.phone,
         roles: user.roles,
-        
-      });
+      },
+      access_token, 
+      refresh_token, 
+    });
     } catch (error) {
       console.error(error);
       return res.status(HttpStatus.UNAUTHORIZED).send({ message: 'Invalid credentials' });
