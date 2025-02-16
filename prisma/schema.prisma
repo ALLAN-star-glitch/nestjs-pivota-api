@@ -20,9 +20,11 @@ model User {
   plan      Plan      @default(free)
 
   // Relationships
-  roles     UserRole[] // Many-to-Many User <-> Roles
-  houseAds  HouseAd[]  @relation("UserHouseAds") // One-to-Many with HouseAds ,... a user can have multiple house ads
-  refreshTokens RefreshToken[] @relation("UserRefreshTokens") // One-to-Many with RefreshTokens ... a user can have multiple refresh tokens
+  roles     UserRole[] 
+  houseAds  HouseAd[]  @relation("UserHouseAds") 
+
+  // ✅ One-to-One: A user can have only one refresh token
+ refreshTokens  RefreshToken[] // ✅ One-to-Many relation (A user can have multiple refresh tokens)
 }
 
 model Role {
@@ -79,18 +81,19 @@ model HouseAd {
 }
 
 model RefreshToken {
-  id        String   @id @default(cuid())
-  token     String   @unique
-  userId    String
-  createdAt DateTime @default(now())
-  expiresAt DateTime
+  id         String   @id @default(cuid())
+  token      String   @unique
+  userId     String   // Do NOT add `@unique` here
+  device     String
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
 
-  //Relationship
-  user      User     @relation(fields: [userId], references: [id], name: "UserRefreshTokens") //many to one relationship ... a user can have multiple refresh tokens
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade) // ✅ One-to-Many
 
-  @@index([userId, expiresAt]) // Add an index to optimize querying by userId and expiration date
-
+  @@index([userId, expiresAt]) // ✅ Index for performance
 }
+
 
 enum Plan {
   free

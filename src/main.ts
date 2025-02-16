@@ -11,14 +11,14 @@ import { readFileSync } from 'fs';
 async function bootstrap() {
   console.log('Application is starting...');
 
-  // const httpsOptions = {
-  //   key: readFileSync('src/localhost-key.pem'), // Private key file
-  //   cert: readFileSync('src/localhost.pem'), // SSL certificate file
-  // };      new FastifyAdapter({ https: httpsOptions }),
+  const httpsOptions = {
+    key: readFileSync('src/localhost-key.pem'), // Private key file
+    cert: readFileSync('src/localhost.pem'), // SSL certificate file
+  };
 
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter(),
+    new FastifyAdapter({ https: httpsOptions }),
   );
 
   app.useGlobalPipes(new ValidationPipe());
@@ -26,7 +26,7 @@ async function bootstrap() {
   // Enable CORS for frontend
   app.register(fastifyCors, {
     origin: (origin, cb) => {
-      const allowedOrigins = ['https://pivota-expressjs-platform.onrender.com'];
+      const allowedOrigins = ['https://pivota-expressjs-platform.onrender.com', 'https://localhost:3000'];
       if (!origin || allowedOrigins.includes(origin)) {
         cb(null, true);
       } else {

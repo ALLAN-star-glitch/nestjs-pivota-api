@@ -1,28 +1,27 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
-import * as bcrypt from 'bcryptjs';
-import { JwtService } from '@nestjs/jwt';
-const dayjs = require('dayjs');
-import * as crypto from 'crypto';
+import {
+  BadRequestException,
+  Injectable,
+  UnauthorizedException,
+} from "@nestjs/common";
+import * as bcrypt from "bcryptjs";
+import { JwtService } from "@nestjs/jwt";
+import * as crypto from "crypto";
+import * as dayjs from "dayjs";
 
-
-import { PrismaService } from './prisma.service';
-import { User } from '@prisma/client';
-import { validate } from 'class-validator';
-import { LoginDto } from './dto/login.dto';
-import { SignupDto } from './dto/signup.dto';
-
+import { PrismaService } from "./prisma.service";
+import { User } from "@prisma/client";
+import { validate } from "class-validator";
+import { LoginDto } from "./dto/login.dto";
+import { SignupDto } from "./dto/signup.dto";
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jwtService: JwtService, // Injecting JwtService for signing tokens ... JwtService is used for generating tokens
-  ) {
-    console.log('AuthService is being initialized');
-    console.log(process.env.JWT_SECRET);
-  }
+    private readonly jwtService: JwtService
+  ) {}
 
-  // ------------------ USER VALIDATION ------------------
+  // ------------------ VALIDATE USER ------------------
   async validateUser(email: string, password: string): Promise<User> {
     const user = await this.prisma.user.findUnique({
       where: { email },
@@ -30,20 +29,19 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException("Invalid credentials");
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException("Invalid credentials");
     }
 
     return user;
   }
 
-
-   // ------------------ SIGNUP FUNCTION ------------------
-   async signup(signupDto: SignupDto) {
+  // ------------------ SIGNUP FUNCTION ------------------
+  async signup(signupDto: SignupDto) {
     // Validate the signup DTO
     const errors = await validate(signupDto); // Validate the DTO using class-validator
 
@@ -133,46 +131,57 @@ export class AuthService {
     return { user, message: successMessage, status: 201 };
   }
 
-  // ------------------ LOGIN FUNCTION ------------------
-  async login(loginDto: LoginDto) {
+
+  // ------------------ LOGIN FUNCTION (Multi-Device) ------------------
+  async login(loginDto: LoginDto, deviceInfo?: string, ipAddress?: string) {
     const { email, password } = loginDto;
-  
+
     const user = await this.prisma.user.findUnique({
       where: { email },
-      include: {
-        roles: {
-          select: {
-            role: { select: { name: true } },
-          },
-        },
-      },
+      include: { roles: { select: { role: { select: { name: true } } } } },
     });
-  
+
     if (!user) {
-      throw new UnauthorizedException('Invalid email or password.');
+      throw new UnauthorizedException("Invalid email or password.");
     }
-  
+
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid email or password.');
+      throw new UnauthorizedException("Invalid email or password.");
     }
-  
-    const userRoles = user.roles.map((role: { role: { name: String; }; }) => role.role.name);
-  
-    const jwtResponse = this.generateJwt(user);
-  
+
+    const userRoles = user.roles.map((role: { role: { name: any; }; }) => role.role.name);
+
+    // Generate Access Token
+    const access_token = this.jwtService.sign(
+      {
+        userId: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        plan: user.plan,
+        roles: userRoles,
+      },
+      { expiresIn: "15m" }
+    );
+
+    // Generate Refresh Token
+    const refresh_token = crypto.randomBytes(64).toString("hex");
+
+    // Store refresh token in DB
     await this.prisma.refreshToken.create({
       data: {
         userId: user.id,
-        token: jwtResponse.refresh_token,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        token: refresh_token,
+        expiresAt: dayjs().add(7, "days").toDate(),
+        device: deviceInfo || "Unknown Device",
+        ipAddress: ipAddress || "Unknown IP",
       },
     });
-  
+
     return {
-      message: 'Login successful',
-      access_token: jwtResponse.access_token,
-      refresh_token: jwtResponse.refresh_token,
+      message: "Login successful",
+      access_token,
+      refresh_token,
       user: {
         id: user.id,
         firstName: user.firstName,
@@ -185,42 +194,77 @@ export class AuthService {
       },
     };
   }
-  
 
-  // ------------------ GENERATE JWT FUNCTION ------------------
-  private generateJwt(user: any) {
-    const refreshToken = crypto.randomBytes(64).toString('hex');
+   // ------------------ Logout Function ------------------
 
-    const payload = {
-      plan: user.plan,
-      userId: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      roles: user.roles.map((userRole: any) => userRole.role.name),
-    };
+  async logout(refresh_token: string) {
+    try {
+      // Find and remove refresh token from DB
+      await this.prisma.user.updateMany({
+        where: { refreshToken: refresh_token },
+        data: { refreshToken: null },
+      });
 
- 
+      return { message: "User logged out successfully" };
+    } catch (error) {
+      throw new UnauthorizedException("Failed to log out");
+    }
+  }
 
-    const access_token = this.jwtService.sign(payload, {
-      expiresIn: '1h',
+  // ------------------ REFRESH ACCESS TOKEN FUNCTION ------------------
+  async refreshAccessToken(refreshToken: string) {
+    // Check if the refresh token exists in the database
+    const storedToken = await this.prisma.refreshToken.findUnique({
+      where: { token: refreshToken },
+      include: { user: { include: { roles: { select: { role: { select: { name: true } } } } } } },
     });
+
+    if (!storedToken) {
+      throw new UnauthorizedException("Invalid refresh token.");
+    }
+
+    // Check if the refresh token has expired
+    if (dayjs().isAfter(storedToken.expiresAt)) {
+      await this.prisma.refreshToken.delete({ where: { id: storedToken.id } });
+      throw new UnauthorizedException("Refresh token expired. Please log in again.");
+    }
+
+    const user = storedToken.user;
+    const userRoles = user.roles.map((role) => role.role.name);
+
+    // Generate a new access token
+    const newAccessToken = this.jwtService.sign(
+      {
+        userId: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        plan: user.plan,
+        roles: userRoles,
+      },
+      { expiresIn: "15m" }
+    );
 
     return {
-      access_token,
-      refresh_token: refreshToken,
+      access_token: newAccessToken,
+      refresh_token: refreshToken, // Keep the same refresh token
+      user: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phone: user.phone,
+        plan: user.plan,
+        isPremium: user.isPremium,
+        roles: userRoles,
+      },
     };
   }
 
-  // New method to get user by userId
-  async getUserById(userId: String): Promise<User | null> {
-    const user = await this.prisma.user.findUnique({
+  // ------------------ GET USER BY ID ------------------
+  async getUserById(userId: string): Promise<User | null> {
+    return this.prisma.user.findUnique({
       where: { id: userId },
-      include: { roles: true },  // Include roles if needed
+      include: { roles: true },
     });
-
-    return user;
   }
-
 }
-
-

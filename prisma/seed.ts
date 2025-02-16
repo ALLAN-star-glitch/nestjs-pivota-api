@@ -1,6 +1,7 @@
 import { PrismaClient, Plan } from "@prisma/client";
-import * as crypto from 'crypto';
-const dayjs = require('dayjs');
+import * as bcrypt from "bcryptjs";
+import * as crypto from "crypto";
+import * as dayjs from "dayjs";
 
 const prisma = new PrismaClient();
 
@@ -20,12 +21,12 @@ async function main() {
   // Helper function to get role ID by name
   const getRoleId = (name: string) => roles.find((role) => role.name === name)?.id;
 
-  // Remove the password hashing step and use plain text passwords
-  const defaultPassword = "password"; // Plaintext password
-  const premiumPassword = "premiumpassword"; // Plaintext password
+  // Securely hash passwords before storing
+  const defaultPassword = await bcrypt.hash("password", 12);
+  const premiumPassword = await bcrypt.hash("premiumpassword", 12);
 
-  console.log(defaultPassword); // Log the plaintext password
-  console.log(premiumPassword); // Log the plaintext password
+  console.log("Default User Password:", defaultPassword);
+  console.log("Premium User Password:", premiumPassword);
 
   // Create a default free user
   const freeUser = await prisma.user.upsert({
@@ -36,29 +37,24 @@ async function main() {
       firstName: "Default",
       lastName: "User",
       phone: "1234567890",
-      password: defaultPassword, // Use plaintext password
+      password: defaultPassword, // Hashed password
       isPremium: false,
-      plan: Plan.free, // Use Prisma Enum
+      plan: Plan.free,
     },
   });
 
   // Assign the "user" role to free user if not already assigned
   if (getRoleId("user")) {
-    const existingUserRole = await prisma.userRole.findFirst({
+    await prisma.userRole.upsert({
       where: {
+        userId_roleId: { userId: freeUser.id, roleId: getRoleId("user")! },
+      },
+      update: {},
+      create: {
         userId: freeUser.id,
         roleId: getRoleId("user")!,
       },
     });
-
-    if (!existingUserRole) {
-      await prisma.userRole.create({
-        data: {
-          userId: freeUser.id,
-          roleId: getRoleId("user")!,
-        },
-      });
-    }
   }
 
   // Create a premium user
@@ -70,9 +66,9 @@ async function main() {
       firstName: "Premium",
       lastName: "User",
       phone: "9876543210",
-      password: premiumPassword, // Use plaintext password
+      password: premiumPassword, // Hashed password
       isPremium: true,
-      plan: Plan.gold, // Use Prisma Enum
+      plan: Plan.gold,
     },
   });
 
@@ -80,49 +76,49 @@ async function main() {
   const premiumRoles = ["user", "serviceProvider", "landlord"];
   for (const role of premiumRoles) {
     if (getRoleId(role)) {
-      const existingPremiumUserRole = await prisma.userRole.findFirst({
+      await prisma.userRole.upsert({
         where: {
+          userId_roleId: { userId: premiumUser.id, roleId: getRoleId(role)! },
+        },
+        update: {},
+        create: {
           userId: premiumUser.id,
           roleId: getRoleId(role)!,
         },
       });
-
-      if (!existingPremiumUserRole) {
-        await prisma.userRole.create({
-          data: {
-            userId: premiumUser.id,
-            roleId: getRoleId(role)!,
-          },
-        });
-      }
     }
   }
 
-  // Create refresh tokens for testing (using secure random token generation)
-  const createRefreshToken = async (userId: string) => {
-    const refreshToken = crypto.randomBytes(64).toString("hex"); // Generate a secure 64-byte hex string
-    const expiresAt = dayjs().add(30, "days").toDate(); // Set expiration time for 30 days
+  // Function to create refresh tokens with device info
+  const createRefreshToken = async (userId: string, device: string, ipAddress?: string) => {
+    const refreshToken = crypto.randomBytes(64).toString("hex"); // Generate secure token
+    const expiresAt = dayjs().add(30, "days").toDate(); // Expire in 30 days
+
     await prisma.refreshToken.create({
       data: {
         token: refreshToken,
-        userId: userId,
-        expiresAt: expiresAt,
+        userId,
+        device,
+        ipAddress,
+        expiresAt,
       },
     });
+
+    console.log(`Created refresh token for ${userId} on ${device}`);
   };
 
-  // Create refresh token for the free user (for testing purposes)
-  await createRefreshToken(freeUser.id);
+  // Create refresh tokens for users (simulating different devices)
+  await createRefreshToken(freeUser.id, "Laptop", "192.168.1.10");
+  await createRefreshToken(freeUser.id, "Mobile", "192.168.1.11");
+  await createRefreshToken(premiumUser.id, "Desktop", "192.168.1.12");
+  await createRefreshToken(premiumUser.id, "Tablet", "192.168.1.13");
 
-  // Create refresh token for the premium user (for testing purposes)
-  await createRefreshToken(premiumUser.id);
-
-  console.log("Roles, users, refresh tokens, and plans seeded successfully!");
+  console.log("Database seeding completed!");
 }
 
 main()
   .catch((e) => {
-    console.error("Error seeding database:", e);
+    console.error(" Error seeding database:", e);
     process.exit(1);
   })
   .finally(() => prisma.$disconnect());
