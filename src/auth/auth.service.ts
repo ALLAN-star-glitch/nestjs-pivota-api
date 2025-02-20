@@ -42,95 +42,115 @@ export class AuthService {
 
   // ------------------ SIGNUP FUNCTION ------------------
   async signup(signupDto: SignupDto) {
-    // Validate the signup DTO
-    const errors = await validate(signupDto); // Validate the DTO using class-validator
-
+    // Validate DTO
+    const errors = await validate(signupDto);
     if (errors.length > 0) {
-      return { message: 'Validation failed', errors, status: 400 };
+      return { message: "Validation failed", errors, status: 400 };
     }
-
+  
     const { firstName, lastName, email, password, confirmPassword, phone, plan, roles } = signupDto;
-
+  
     if (password !== confirmPassword) {
-      throw new BadRequestException('Passwords do not match');
+      throw new BadRequestException("Passwords do not match");
     }
-
-    const existingUserByEmail = await this.prisma.user.findUnique({ where: { email } });
-    if (existingUserByEmail) {
-      throw new BadRequestException('An account with this email already exists.');
+  
+    // Check if email or phone number already exists
+    const existingUser = await this.prisma.user.findFirst({
+      where: { OR: [{ email }, { phone }] },
+    });
+  
+    if (existingUser) {
+      throw new BadRequestException("An account with this email or phone number already exists.");
     }
-
-    const existingPhoneNumber = await this.prisma.user.findUnique({ where: { phone } });
-    if (existingPhoneNumber) {
-      throw new BadRequestException('An account with this phone number already exists.');
-    }
-
+  
     const hashedPassword = await bcrypt.hash(password, 12);
-
+  
+    // Determine allowed roles based on plan
     const rolesPerPlan = {
-      free: ['user'],
-      bronze: ['landlord', 'employer', 'serviceProvider'],
-      silver: ['landlord', 'employer', 'serviceProvider'],
-      gold: ['landlord', 'employer', 'serviceProvider'],
+      free: ["user"],
+      bronze: ["landlord", "employer", "serviceProvider"],
+      silver: ["landlord", "employer", "serviceProvider"],
+      gold: ["landlord", "employer", "serviceProvider"],
     };
-
-    let roleNames = ['user'];
-
+  
+    let roleNames = ["user"];
+  
     if (roles) {
-      const validRoles = roles.filter(role => rolesPerPlan[plan]?.includes(role));
-
+      const validRoles = roles.filter((role) => rolesPerPlan[plan]?.includes(role));
+  
       if (validRoles.length !== roles.length) {
-        throw new BadRequestException('Some roles are invalid for your plan.');
+        throw new BadRequestException("Some roles are invalid for your plan.");
       }
-
-      if (validRoles.length > (plan === 'bronze' ? 1 : plan === 'silver' ? 2 : 3)) {
-        throw new BadRequestException(`You can select up to ${plan === 'bronze' ? 1 : plan === 'silver' ? 2 : 3} roles for your plan.`);
+  
+      if (validRoles.length > (plan === "bronze" ? 1 : plan === "silver" ? 2 : 3)) {
+        throw new BadRequestException(
+          `You can select up to ${plan === "bronze" ? 1 : plan === "silver" ? 2 : 3} roles for your plan.`
+        );
       }
-
+  
       roleNames = [...roleNames, ...validRoles];
     }
-
+  
+    // Fetch role IDs
     const roleRecords = await this.prisma.role.findMany({
       where: { name: { in: roleNames } },
     });
-
+  
     if (roleRecords.length !== roleNames.length) {
-      throw new BadRequestException('One or more roles do not exist.');
+      throw new BadRequestException("One or more roles do not exist.");
     }
-
-    const newUserData = {
-      firstName,
-      lastName,
-      email,
-      password: hashedPassword,
-      phone,
-      plan,
-      isPremium: plan !== 'free',
-    };
-
+  
+    // Create the user
     const user = await this.prisma.user.create({
-      data: newUserData,
+      data: {
+        firstName,
+        lastName,
+        email,
+        password: hashedPassword,
+        phone,
+        plan,
+        isPremium: plan !== "free",
+      },
     });
-
-    const rolesForUser = await this.prisma.role.findMany({
-      where: { name: { in: roleNames } },
-    });
-
+  
+    // Assign roles
     await this.prisma.userRole.createMany({
-      data: rolesForUser.map(role => ({
+      data: roleRecords.map((role) => ({
         userId: user.id,
         roleId: role.id,
       })),
     });
-
-    let successMessage = 'Your account was created successfully.';
-    if (plan === 'bronze') successMessage = 'Your bronze premium membership has been created successfully.';
-    else if (plan === 'silver') successMessage = 'Your silver premium membership has been created successfully.';
-    else if (plan === 'gold') successMessage = 'Your gold premium membership has been created successfully.';
-
-    return { user, message: successMessage, status: 201 };
+  
+    // Fetch the user again, this time including roles
+    const createdUser = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      include: { roles: { include: { role: true } } },
+    });
+  
+    // Extract role names
+    const userRoles = createdUser.roles.map((userRole) => userRole.role.name);
+  
+    let successMessage = "Your account was created successfully.";
+    if (plan === "bronze") successMessage = "Your bronze premium membership has been created successfully.";
+    else if (plan === "silver") successMessage = "Your silver premium membership has been created successfully.";
+    else if (plan === "gold") successMessage = "Your gold premium membership has been created successfully.";
+  
+    return {
+      user: {
+        id: createdUser.id,
+        firstName: createdUser.firstName,
+        lastName: createdUser.lastName,
+        email: createdUser.email,
+        phone: createdUser.phone,
+        plan: createdUser.plan,
+        isPremium: createdUser.isPremium,
+        roles: userRoles, // Return roles properly
+      },
+      message: successMessage,
+      status: 201,
+    };
   }
-
+  
 
   // ------------------ LOGIN FUNCTION (Multi-Device) ------------------
   async login(loginDto: LoginDto, deviceInfo?: string, ipAddress?: string) {
@@ -138,7 +158,7 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({
       where: { email },
-      include: { roles: { select: { role: { select: { name: true } } } } },
+      include: { roles: { include: { role: true } } }, // Ensure we fetch the role object
     });
 
     if (!user) {
@@ -150,7 +170,7 @@ export class AuthService {
       throw new UnauthorizedException("Invalid email or password.");
     }
 
-    const userRoles = user.roles.map((role: { role: { name: any; }; }) => role.role.name);
+    const userRoles = user.roles.map((userRole) => userRole.role.name);
 
     // Generate Access Token
     const access_token = this.jwtService.sign(

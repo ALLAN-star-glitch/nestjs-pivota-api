@@ -67,13 +67,6 @@ async login(@Body() loginDto: LoginDto, @Response() res: FastifyReply) {
       maxAge: 15 * 60 * 1000, // 15 minutes expiry for access token
     });
 
-    // Store Refresh Token in HTTP-only Cookie
-    res.setCookie("refresh_token", refresh_token, {
-      httpOnly: true,
-      secure: true,  // Ensure secure cookie transmission over HTTPS
-      sameSite: "lax",  // Adjust based on your needs (strict or lax)
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days expiry for refresh token
-    });
 
     return res.send({
       message: "Login successful",
@@ -84,7 +77,10 @@ async login(@Body() loginDto: LoginDto, @Response() res: FastifyReply) {
         plan: user.plan,
         phone: user.phone,
         roles: user.roles,
+     
       },
+      access_token,
+      refresh_token
     });
   } catch (error) {
     return res
