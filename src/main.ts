@@ -35,7 +35,7 @@ async function bootstrap() {
     // },
     origin: 'https://pivota-expressjs-platform.onrender.com',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Accept', 'Authorization', 'set-cookie'],
     credentials: true,
   });
 

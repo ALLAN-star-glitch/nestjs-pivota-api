@@ -63,7 +63,7 @@ async login(@Body() loginDto: LoginDto, @Response() res: FastifyReply) {
     res.setCookie("access_token", access_token, {
       httpOnly: true,
       secure: true,  // Ensure secure cookie transmission over HTTPS
-      sameSite: "lax",  // Adjust based on your needs (strict or lax)
+      sameSite: "none",  // Adjust based on your needs (strict or lax)
       maxAge: 15 * 60 * 1000, // 15 minutes expiry for access token
     });
 
@@ -117,7 +117,7 @@ async login(@Body() loginDto: LoginDto, @Response() res: FastifyReply) {
     res.setCookie("access_token", newTokens.access_token, {
       httpOnly: true,
       secure: true,
-      sameSite: "lax",
+      sameSite: "none",
       maxAge: 15 * 60 * 1000, // 15 minutes expiry
     });
 
