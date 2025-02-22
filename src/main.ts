@@ -25,14 +25,15 @@ async function bootstrap() {
 
   // Enable CORS for frontend
   app.register(fastifyCors, {
-    origin: (origin, cb) => {
-      const allowedOrigins = ['https://pivota-expressjs-platform.onrender.com', 'https://localhost:3000'];
-      if (!origin || allowedOrigins.includes(origin)) {
-        cb(null, true);
-      } else {
-        cb(new Error('Not allowed by CORS'), false);
-      }
-    },
+    // origin: (origin, cb) => {
+    //   const allowedOrigins = ['https://pivota-expressjs-platform.onrender.com', 'https://localhost:3000'];
+    //   if (!origin || allowedOrigins.includes(origin)) {
+    //     cb(null, true);
+    //   } else {
+    //     cb(new Error('Not allowed by CORS'), false);
+    //   }
+    // },
+    origin: 'https://pivota-expressjs-platform.onrender.com',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
     credentials: true,
