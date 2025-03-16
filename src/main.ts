@@ -11,15 +11,17 @@ import { readFileSync } from 'fs';
 async function bootstrap() {
   console.log('Application is starting...');
 
-  //const httpsOptions = {
-    //key: readFileSync('src/localhost-key.pem'), // Private key file
-   // cert: readFileSync('src/localhost.pem'), // SSL certificate file
- // };
+  const httpsOptions = {
+    key: readFileSync('src/localhost-key.pem'), // Private key file
+   cert: readFileSync('src/localhost.pem'), // SSL certificate file
+ };
 
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter(), //{ https: httpsOptions }
+    new FastifyAdapter(), 
   );
+
+  // { https: httpsOptions }}
 
   app.useGlobalPipes(new ValidationPipe());
 
