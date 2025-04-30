@@ -1,7 +1,10 @@
+//This tells Prisma to generate a TypeScript/JavaScript client that lets you query the database in your app.
 generator client {
   provider = "prisma-client-js"
 }
 
+
+//This connects Prisma to a PostgreSQL database using a URL from your environment variables.
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -23,7 +26,6 @@ model User {
   roles     UserRole[] 
   houseAds  HouseAd[]  @relation("UserHouseAds") 
 
-  // ✅ One-to-One: A user can have only one refresh token
  refreshTokens  RefreshToken[] // ✅ One-to-Many relation (A user can have multiple refresh tokens)
 }
 
@@ -35,6 +37,8 @@ model Role {
   permissions RolePermission[] // Many-to-Many Role <-> Permissions
 }
 
+
+//Permission is Related to Role through RolePermission.
 model Permission {
   id          String          @id @default(cuid())
   name        String          @unique
@@ -42,6 +46,9 @@ model Permission {
   roles       RolePermission[] // Many-to-Many Permission <-> Roles
 }
 
+
+//Join table between User and Role
+//Composite primary key ensures one user can’t have the same role twice.
 model UserRole {
   userId String //foreign key referencing User
   roleId String //foreign key referencing Role
@@ -51,6 +58,8 @@ model UserRole {
   @@id([userId, roleId]) // Composite key to ensure uniqueness (i.e., each user can only have a role only once)
 }
 
+
+//Join table between Role and Permission
 model RolePermission { //similar to UserRole
   roleId       String
   permissionId String
@@ -88,11 +97,16 @@ model RefreshToken {
   ipAddress  String?
   createdAt  DateTime @default(now())
   expiresAt  DateTime
+  lastUsedAt  DateTime? //optional ... e.g., to show when the user was last logged in 
+  userAgent   String? //option ... to track device, browser, device type etc.... 
+
+  revoked    Boolean  @default(false) // for soft delete
 
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade) // ✅ One-to-Many
 
   @@index([userId, expiresAt]) // ✅ Index for performance
 }
+
 
 
 enum Plan {

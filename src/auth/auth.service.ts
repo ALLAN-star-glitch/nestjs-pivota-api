@@ -21,7 +21,10 @@ export class AuthService {
     private readonly jwtService: JwtService
   ) {}
 
-  // ------------------ VALIDATE USER ------------------
+  // ------------------ VALIDATE USER FUNCTION ------------------
+  //Used internally to verify credentials.
+ //Checks if email exists and password is correct.
+
   async validateUser(email: string, password: string): Promise<User> {
     const user = await this.prisma.user.findUnique({
       where: { email },
@@ -29,12 +32,12 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new UnauthorizedException("Invalid credentials");
+        throw new UnauthorizedException("Sorry, invalid credentials");
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      throw new UnauthorizedException("Invalid credentials");
+      throw new UnauthorizedException("Sorry, Invalid credentials");
     }
 
     return user;
@@ -51,7 +54,7 @@ export class AuthService {
     const { firstName, lastName, email, password, confirmPassword, phone, plan, roles } = signupDto;
   
     if (password !== confirmPassword) {
-      throw new BadRequestException("Passwords do not match");
+      throw new BadRequestException("Sorry, passwords do not match");
     }
   
     // Check if email or phone number already exists
@@ -75,9 +78,13 @@ export class AuthService {
   
     let roleNames = ["user"];
   
-    if (roles) {
+
+    
+    if (roles) {//Check if the user tried to request additional roles (premium roles) when signing up. If not, the system will skip the following validations and just assign the "user" role.
       const validRoles = roles.filter((role) => rolesPerPlan[plan]?.includes(role));
   
+
+      //Check if any of the user-submitted roles were invalid (not allowed under the selected plan). If the filtered roles list is shorter, it means some invalid roles were attempted — throw an error.
       if (validRoles.length !== roles.length) {
         throw new BadRequestException("Some roles are invalid for your plan.");
       }
@@ -93,7 +100,11 @@ export class AuthService {
   
     // Fetch role IDs
     const roleRecords = await this.prisma.role.findMany({
-      where: { name: { in: roleNames } },
+      where: { 
+        name: { 
+          in: roleNames 
+        } 
+      },
     });
   
     if (roleRecords.length !== roleNames.length) {
@@ -123,8 +134,15 @@ export class AuthService {
   
     // Fetch the user again, this time including roles
     const createdUser = await this.prisma.user.findUnique({
-      where: { id: user.id },
-      include: { roles: { include: { role: true } } },
+      where: { 
+        id: user.id
+       },
+      include: {
+         roles: {
+           include: { 
+            role: true } 
+          }
+         },
     });
   
     // Extract role names
@@ -157,8 +175,16 @@ export class AuthService {
     const { email, password } = loginDto;
 
     const user = await this.prisma.user.findUnique({
-      where: { email },
-      include: { roles: { include: { role: true } } }, // Ensure we fetch the role object
+      where: { 
+        email 
+      },
+      include: { 
+        roles: { 
+          include: { 
+            role: true 
+          } 
+        }
+       },
     });
 
     if (!user) {
@@ -173,16 +199,7 @@ export class AuthService {
     const userRoles = user.roles.map((userRole) => userRole.role.name);
 
     // Generate Access Token
-    const access_token = this.jwtService.sign(
-      {
-        userId: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        plan: user.plan,
-        roles: userRoles,
-      },
-      { expiresIn: "15m" }
-    );
+    const access_token = this.generateAccessToken(user)
 
     // Generate Refresh Token
     const refresh_token = crypto.randomBytes(64).toString("hex");
@@ -215,6 +232,24 @@ export class AuthService {
     };
   }
 
+  // ------------------ Generate AccessToken Function ------------------
+
+  private generateAccessToken(user: User & { roles: { role: { name: string } }[] }): string {
+    const userRoles = user.roles.map((userRole) => userRole.role.name);
+  
+    return this.jwtService.sign(
+      {
+        userId: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        plan: user.plan,
+        roles: userRoles,
+      },
+      { expiresIn: "15m" }
+    );
+  }
+  
+
    // ------------------ Logout Function ------------------
 
   async logout(refresh_token: string) {
@@ -235,22 +270,43 @@ export class AuthService {
   async refreshAccessToken(refreshToken: string) {
     // Check if the refresh token exists in the database
     const storedToken = await this.prisma.refreshToken.findUnique({
-      where: { token: refreshToken },
-      include: { user: { include: { roles: { select: { role: { select: { name: true } } } } } } },
+      where: { 
+        token: refreshToken 
+      },
+      include: { 
+        user: { 
+          include: { 
+            roles: { 
+              select: { 
+                role: {
+                   select: { 
+                    name: true 
+                  } 
+                }
+               } 
+              } 
+            }
+           } 
+          },
     });
 
     if (!storedToken) {
-      throw new UnauthorizedException("Invalid refresh token.");
+      throw new UnauthorizedException("Sorry, Invalid refresh token.");
     }
 
     // Check if the refresh token has expired
     if (dayjs().isAfter(storedToken.expiresAt)) {
-      await this.prisma.refreshToken.delete({ where: { id: storedToken.id } });
+      await this.prisma.refreshToken.delete({ 
+        where: { 
+          id: storedToken.id
+         }
+         }
+        );
       throw new UnauthorizedException("Refresh token expired. Please log in again.");
     }
 
     const user = storedToken.user;
-    const userRoles = user.roles.map((role) => role.role.name);
+    const userRoles = user.roles.map((userRole) => userRole.role.name);
 
     // Generate a new access token
     const newAccessToken = this.jwtService.sign(
