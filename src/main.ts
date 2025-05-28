@@ -18,10 +18,10 @@ async function bootstrap() {
 
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter(), 
+    new FastifyAdapter({ https: httpsOptions }),   // { https: httpsOptions }}
   );
 
-  // { https: httpsOptions }}
+
 
   app.useGlobalPipes(new ValidationPipe());
 

@@ -23,6 +23,7 @@ import {
 import { SignupDto } from "./dto/signup.dto";
 import { validate } from "class-validator";
 import { LoginDto } from "./dto/login.dto";
+import { $Enums } from "@prisma/client";
 
 @ApiTags("Auth")
 @Controller("auth")
@@ -74,6 +75,7 @@ async login(@Body() loginDto: LoginDto, @Response() res: FastifyReply) {
         id: user.id,
         firstName: user.firstName,
         lastName: user.lastName,
+        email: user.email,
         plan: user.plan,
         phone: user.phone,
         roles: user.roles,
@@ -142,7 +144,7 @@ async getUser(@Req() req: any,   @Response() res: FastifyReply, @Query("id") id?
         .send({ message: "Access token not provided or expired" });
     }
 
-    let user;
+    let user: { firstName: string; lastName: string; email: string; password: string; phone: string; plan: $Enums.Plan; id: string; createdAt: Date; updatedAt: Date; isPremium: boolean; } | null;
 
     if (id) {
       // If an ID is provided, fetch the user by that ID

@@ -268,73 +268,84 @@ export class AuthService {
 
   // ------------------ REFRESH ACCESS TOKEN FUNCTION ------------------
   async refreshAccessToken(refreshToken: string) {
-    // Check if the refresh token exists in the database
-    const storedToken = await this.prisma.refreshToken.findUnique({
-      where: { 
-        token: refreshToken 
-      },
-      include: { 
-        user: { 
-          include: { 
-            roles: { 
-              select: { 
-                role: {
-                   select: { 
-                    name: true 
-                  } 
-                }
-               } 
-              } 
-            }
-           } 
-          },
-    });
-
-    if (!storedToken) {
-      throw new UnauthorizedException("Sorry, Invalid refresh token.");
-    }
-
-    // Check if the refresh token has expired
-    if (dayjs().isAfter(storedToken.expiresAt)) {
-      await this.prisma.refreshToken.delete({ 
-        where: { 
-          id: storedToken.id
-         }
-         }
-        );
-      throw new UnauthorizedException("Refresh token expired. Please log in again.");
-    }
-
-    const user = storedToken.user;
-    const userRoles = user.roles.map((userRole) => userRole.role.name);
-
-    // Generate a new access token
-    const newAccessToken = this.jwtService.sign(
-      {
-        userId: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        plan: user.plan,
-        roles: userRoles,
-      },
-      { expiresIn: "15m" }
-    );
-
-    return {
-      access_token: newAccessToken,
-      refresh_token: refreshToken, // Keep the same refresh token
+  // 1. Find the refresh token in DB
+  const storedToken = await this.prisma.refreshToken.findUnique({
+    where: { token: refreshToken },
+    include: {
       user: {
-        id: user.id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        phone: user.phone,
-        plan: user.plan,
-        isPremium: user.isPremium,
-        roles: userRoles,
+        include: {
+          roles: {
+            select: {
+              role: {
+                select: { name: true },
+              },
+            },
+          },
+        },
       },
-    };
+    },
+  });
+
+  // 2. Token not found
+  if (!storedToken) {
+    throw new UnauthorizedException('Invalid refresh token.');
   }
+
+  // 3. Token expired
+  if (dayjs().isAfter(storedToken.expiresAt)) {
+    await this.prisma.refreshToken.delete({ where: { id: storedToken.id } });
+    throw new UnauthorizedException('Refresh token expired. Please log in again.');
+  }
+
+  const user = storedToken.user;
+  const userRoles = user.roles.map((userRole) => userRole.role.name);
+
+  // 4. Generate new access token
+  const newAccessToken = this.jwtService.sign(
+    {
+      userId: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      plan: user.plan,
+      roles: userRoles,
+    },
+    { expiresIn: '15m' }
+  );
+
+  // 5. Generate a new refresh token (ROTATION)
+  const newRefreshToken = uuidv4();
+  const newRefreshTokenExpiry = dayjs().add(30, 'days').toDate();
+
+  // 6. Save the new refresh token in DB
+  await this.prisma.refreshToken.create({
+    data: {
+      token: newRefreshToken,
+      userId: user.id,
+      expiresAt: newRefreshTokenExpiry,
+    },
+  });
+
+  // 7. Delete the old refresh token from DB
+  await this.prisma.refreshToken.delete({
+    where: { id: storedToken.id },
+  });
+
+  // 8. Return new tokens and user profile
+  return {
+    access_token: newAccessToken,
+    refresh_token: newRefreshToken,
+    user: {
+      id: user.id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      phone: user.phone,
+      plan: user.plan,
+      isPremium: user.isPremium,
+      roles: userRoles,
+    },
+  };
+}
 
   // ------------------ GET USER BY ID ------------------
   async getUserById(userId: string): Promise<User | null> {
@@ -344,3 +355,7 @@ export class AuthService {
     });
   }
 }
+function uuidv4() {
+  throw new Error("Function not implemented.");
+}
+
