@@ -137,6 +137,7 @@ model CategoryRule {
 
   category        Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   plan            Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  @@unique([categoryId, planId])
 }
 
 // Join table: connects Users ↔ Categories (Many-to-Many)

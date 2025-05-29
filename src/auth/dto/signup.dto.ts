@@ -57,11 +57,11 @@ export class SignupDto {
 
   @ApiProperty({
     description: 'Selected plan for the user.',
-    enum: ['free', 'bronze', 'silver', 'gold'],
+    enum: ['Free Plan', 'Bronze Plan', 'Bronze Plan', 'Gold Plan'],
     example: 'silver',
   })
-  @IsEnum(['free', 'bronze', 'silver', 'gold'], { message: 'Invalid plan selected.' })
-  plan: 'free' | 'bronze' | 'silver' | 'gold';
+  @IsEnum(['Free Plan', 'Bronze Plan', 'Silver Plan', 'Gold Plan'], { message: 'Invalid plan selected.' })
+  plan: 'Free Plan' | 'Bronze Plan' | 'Silver Plan' | 'Gold Plan';
 
   @ApiProperty({
     description: 'Roles assigned to the user.',

@@ -1,25 +1,16 @@
-/**
- * Seed script for Pivota platform
- * Uses Prisma Client to populate initial data:
- * - Roles, Permissions, Role-Permission links
- * - Plans, Plan Features
- * - Categories, Category Rules
- * - Users with default 'user' role plus any extra roles
- * - User-Category links
- */
-
 import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 async function main() {
   // ========== ROLES ==========
   const rolesData = [
-    { name: "user", description: "Registered user with basic access" },
-    { name: "admin", description: "Administrator with full privileges" },
-    { name: "super_admin", description: "Super administrator with elevated privileges" },
+    { name: "registered_user", description: "Default role for all signed-up users" },
+    { name: "moderator", description: "Can review and moderate content or reports" },
+    { name: "admin", description: "Administrator with platform-level privileges" },
+    { name: "super_admin", description: "Full access to manage platform settings" },
+    { name: "partner", description: "External partner with limited elevated access" },
   ];
 
-  // Upsert roles & keep a map of name → id for easy reference
   const roleMap = new Map<string, string>();
   for (const role of rolesData) {
     const r = await prisma.role.upsert({
@@ -39,6 +30,8 @@ async function main() {
     { name: "post_house_ads", description: "Can post house listings" },
     { name: "manage_plans", description: "Can create or update plans" },
     { name: "manage_categories", description: "Can create or update service categories" },
+    { name: "view_listings", description: "Can view listings" },
+    { name: "moderate_content", description: "Can moderate reports and listings" },
   ];
 
   const permissionMap = new Map<string, string>();
@@ -52,11 +45,12 @@ async function main() {
   }
 
   // ========== ROLE-PERMISSION LINKS ==========
-  // Example: admin and super_admin have all permissions; user has only some basic permissions
   const rolePermissions = [
-    { role: "user", permissions: ["post_house_ads"] },
-    { role: "admin", permissions: [...permissionsData.map(p => p.name)] },
-    { role: "super_admin", permissions: [...permissionsData.map(p => p.name)] },
+    { role: "registered_user", permissions: ["view_listings"] },
+    { role: "moderator", permissions: ["read_users", "moderate_content"] },
+    { role: "admin", permissions: permissionsData.map(p => p.name).filter(p => p !== "manage_roles") },
+    { role: "super_admin", permissions: permissionsData.map(p => p.name) },
+    { role: "partner", permissions: ["read_users", "view_listings"] },
   ];
 
   for (const rp of rolePermissions) {
@@ -75,51 +69,40 @@ async function main() {
 
   // ========== PLANS ==========
   const plansData = [
-    {
-      name: "free",
-      slug: "free",
-      price: 0,
-      description: "Basic free plan",
-      features: ["limited_listings", "basic_support"],
-    },
-    {
-      name: "premium",
-      slug: "premium",
-      price: 29.99,
-      description: "Premium plan with more features",
-      features: ["unlimited_listings", "priority_support", "visibility_boost"],
-    },
+    { name: "Free Plan", slug: "free", price: 0, description: "Basic free plan", features: ["limited_listings", "basic_support"] },
+    { name: "Bronze Plan", slug: "bronze", price: 9.99, description: "Starter plan", features: ["more_listings", "basic_support"] },
+    { name: "Silver Plan", slug: "silver", price: 19.99, description: "Good value plan", features: ["even_more_listings", "standard_support", "boosted_visibility"] },
+    { name: "Gold Plan", slug: "gold", price: 29.99, description: "Pro-level features", features: ["many_listings", "priority_support", "high_visibility"] },
+    { name: "Platinum Plan", slug: "platinum", price: 49.99, description: "All features unlocked", features: ["unlimited_listings", "premium_support", "top_visibility", "priority_ads"] },
   ];
 
   const planMap = new Map<string, string>();
   for (const plan of plansData) {
     const p = await prisma.plan.upsert({
       where: { slug: plan.slug },
-      update: {
-        price: plan.price,
-        description: plan.description,
-        features: plan.features,
-      },
+      update: { price: plan.price, description: plan.description, features: plan.features },
       create: plan,
     });
     planMap.set(plan.slug, p.id);
   }
 
   // ========== PLAN FEATURES ==========
-  // Example granular features for plans
   const planFeaturesData = [
     { planSlug: "free", key: "max_listings", value: "5" },
-    { planSlug: "premium", key: "max_listings", value: "unlimited" },
+    { planSlug: "bronze", key: "max_listings", value: "10" },
+    { planSlug: "silver", key: "max_listings", value: "20" },
+    { planSlug: "gold", key: "max_listings", value: "50" },
+    { planSlug: "platinum", key: "max_listings", value: "unlimited" },
   ];
 
   for (const pf of planFeaturesData) {
     const planId = planMap.get(pf.planSlug);
     if (!planId) continue;
     await prisma.planFeature.upsert({
-      where: { id: `${planId}-${pf.key}` }, // composite key workaround: using a synthetic id
+      where: { id: `${planId}-${pf.key}` },
       update: { value: pf.value },
       create: {
-        id: `${planId}-${pf.key}`, // ensure unique id for upsert
+        id: `${planId}-${pf.key}`,
         planId,
         key: pf.key,
         value: pf.value,
@@ -127,7 +110,7 @@ async function main() {
     });
   }
 
-  // ========== CATEGORIES ==========
+  // ========== SERVICE CATEGORIES ==========
   const categoriesData = [
     { name: "Plumbing", slug: "plumbing", description: "Plumbing services" },
     { name: "Electrician", slug: "electrician", description: "Electrical services" },
@@ -144,69 +127,47 @@ async function main() {
     categoryMap.set(category.slug, c.id);
   }
 
-  // ========== CATEGORY RULES ==========
-  // Rules define limits and features per plan per category
-  const categoryRulesData = [
-    {
-      categorySlug: "plumbing",
-      planSlug: "free",
-      maxListings: 2,
-      visibilityBoost: false,
-    },
-    {
-      categorySlug: "plumbing",
-      planSlug: "premium",
-      maxListings: 10,
-      visibilityBoost: true,
-    },
-    {
-      categorySlug: "electrician",
-      planSlug: "free",
-      maxListings: 1,
-      visibilityBoost: false,
-    },
-    {
-      categorySlug: "electrician",
-      planSlug: "premium",
-      maxListings: 8,
-      visibilityBoost: true,
-    },
-    {
-      categorySlug: "carpentry",
-      planSlug: "free",
-      maxListings: 1,
-      visibilityBoost: false,
-    },
-    {
-      categorySlug: "carpentry",
-      planSlug: "premium",
-      maxListings: 5,
-      visibilityBoost: true,
-    },
-  ];
+  // ========== CATEGORY RULES PER PLAN ==========
+  type CategoryRuleSeed = {
+  id: string;
+  categoryId: string;
+  planId: string;
+  maxListings: number;
+  visibilityBoost: boolean;
+};
 
-  for (const rule of categoryRulesData) {
-    const categoryId = categoryMap.get(rule.categorySlug);
-    const planId = planMap.get(rule.planSlug);
-    if (!categoryId || !planId) continue;
-    await prisma.categoryRule.upsert({
-      where: { id: `${categoryId}-${planId}` }, // synthetic composite id
-      update: {
-        maxListings: rule.maxListings,
-        visibilityBoost: rule.visibilityBoost,
-      },
-      create: {
+const categoryRulesData: CategoryRuleSeed[] = [];
+
+  for (const [categorySlug, rules] of Object.entries({
+    plumbing: [2, 5, 10, 20, 50],
+    electrician: [1, 4, 8, 15, 30],
+    carpentry: [1, 3, 6, 12, 25],
+  })) {
+    const categoryId = categoryMap.get(categorySlug)!;
+
+    ["free", "bronze", "silver", "gold", "platinum"].forEach((planSlug, index) => {
+      const planId = planMap.get(planSlug);
+      if (!planId) return;
+
+      categoryRulesData.push({
         id: `${categoryId}-${planId}`,
         categoryId,
         planId,
-        maxListings: rule.maxListings,
-        visibilityBoost: rule.visibilityBoost,
-      },
+        maxListings: rules[index],
+        visibilityBoost: planSlug !== "free" && planSlug !== "bronze",
+      });
+    });
+  }
+
+  for (const rule of categoryRulesData) {
+    await prisma.categoryRule.upsert({
+      where: { id: rule.id },
+      update: { maxListings: rule.maxListings, visibilityBoost: rule.visibilityBoost },
+      create: rule,
     });
   }
 
   // ========== USERS ==========
-  // Example users, with roles (apart from default "user" role)
   const usersData = [
     {
       email: "user@example.com",
@@ -216,8 +177,18 @@ async function main() {
       password: "hashed_password_here",
       isPremium: false,
       planSlug: "free",
-      role: "user",
-      categories: ["plumbing"],
+      roles: ["registered_user"],
+    },
+    {
+      email: "provider@example.com",
+      firstName: "Service",
+      lastName: "Provider",
+      phone: "+254700000004",
+      password: "hashed_password_here",
+      isPremium: true,
+      planSlug: "gold",
+      roles: ["registered_user"],
+      categories: ["plumbing", "electrician"],
     },
     {
       email: "admin@example.com",
@@ -226,9 +197,8 @@ async function main() {
       phone: "+254700000002",
       password: "hashed_password_here",
       isPremium: true,
-      planSlug: "premium",
-      role: "admin",
-      categories: ["plumbing", "electrician"],
+      planSlug: "silver",
+      roles: ["registered_user", "admin"],
     },
     {
       email: "superadmin@example.com",
@@ -237,19 +207,11 @@ async function main() {
       phone: "+254700000003",
       password: "hashed_password_here",
       isPremium: true,
-      planSlug: "premium",
-      role: "super_admin",
-      categories: ["plumbing", "electrician", "carpentry"],
+      planSlug: "platinum",
+      roles: ["registered_user", "super_admin"],
     },
   ];
 
-  // Helper fn to get role id
-  const getRoleId = (roleName: string) => roleMap.get(roleName);
-
-  // Helper fn to get plan id
-  const getPlanId = (planSlug: string) => planMap.get(planSlug);
-
-  // Seed users and assign roles & categories
   for (const u of usersData) {
     const user = await prisma.user.upsert({
       where: { email: u.email },
@@ -261,33 +223,20 @@ async function main() {
         phone: u.phone,
         password: u.password,
         isPremium: u.isPremium,
-        planId: getPlanId(u.planSlug) ?? undefined,
+        planId: planMap.get(u.planSlug) ?? undefined,
       },
     });
 
-    // Assign default "user" role to every user
-    const userRoleId = getRoleId("user");
-    if (userRoleId) {
+    for (const roleName of u.roles) {
+      const roleId = roleMap.get(roleName);
+      if (!roleId) continue;
       await prisma.userRole.upsert({
-        where: { userId_roleId: { userId: user.id, roleId: userRoleId } },
+        where: { userId_roleId: { userId: user.id, roleId } },
         update: {},
-        create: { userId: user.id, roleId: userRoleId },
+        create: { userId: user.id, roleId },
       });
     }
 
-    // Assign additional specific role if not "user"
-    if (u.role !== "user") {
-      const extraRoleId = getRoleId(u.role);
-      if (extraRoleId) {
-        await prisma.userRole.upsert({
-          where: { userId_roleId: { userId: user.id, roleId: extraRoleId } },
-          update: {},
-          create: { userId: user.id, roleId: extraRoleId },
-        });
-      }
-    }
-
-    // Assign user categories (many-to-many)
     if (u.categories?.length) {
       for (const catSlug of u.categories) {
         const catId = categoryMap.get(catSlug);

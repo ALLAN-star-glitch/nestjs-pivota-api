@@ -6,13 +6,14 @@ import {
 import * as bcrypt from "bcryptjs";
 import { JwtService } from "@nestjs/jwt";
 import * as crypto from "crypto";
-import * as dayjs from "dayjs";
+import dayjs from "dayjs";
 
 import { PrismaService } from "./prisma.service";
 import { User } from "@prisma/client";
 import { validate } from "class-validator";
 import { LoginDto } from "./dto/login.dto";
 import { SignupDto } from "./dto/signup.dto";
+import { v4 as uuidv4 } from "uuid";
 
 @Injectable()
 export class AuthService {
@@ -21,97 +22,91 @@ export class AuthService {
     private readonly jwtService: JwtService
   ) {}
 
-  // ------------------ VALIDATE USER FUNCTION ------------------
-  //Used internally to verify credentials.
- //Checks if email exists and password is correct.
-
-  async validateUser(email: string, password: string): Promise<User> {
+  /**
+   * Validates user credentials and returns full user record with roles and plan.
+   */
+  async validateUser(email: string, password: string): Promise<
+    User & {
+      roles: { role: { name: string } }[];
+      plan: { name: string } | null;
+    }
+  > {
     const user = await this.prisma.user.findUnique({
       where: { email },
-      include: { roles: true },
+      include: { roles: { include: { role: true } }, plan: true },
     });
 
-    if (!user) {
-        throw new UnauthorizedException("Sorry, invalid credentials");
-    }
-
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException("Sorry, Invalid credentials");
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      throw new UnauthorizedException("Sorry, invalid credentials");
     }
 
     return user;
   }
 
-  // ------------------ SIGNUP FUNCTION ------------------
+  /**
+   * Handles user signup logic.
+   * - Automatically assigns `registered_user` role
+   * - Prevents assigning unauthorized roles
+   */
   async signup(signupDto: SignupDto) {
-    // Validate DTO
     const errors = await validate(signupDto);
     if (errors.length > 0) {
       return { message: "Validation failed", errors, status: 400 };
     }
-  
-    const { firstName, lastName, email, password, confirmPassword, phone, plan, roles } = signupDto;
-  
+
+    const {
+      firstName,
+      lastName,
+      email,
+      password,
+      confirmPassword,
+      phone,
+      plan,
+      roles,
+    } = signupDto;
+
     if (password !== confirmPassword) {
       throw new BadRequestException("Sorry, passwords do not match");
     }
-  
-    // Check if email or phone number already exists
+
     const existingUser = await this.prisma.user.findFirst({
       where: { OR: [{ email }, { phone }] },
     });
-  
+
     if (existingUser) {
-      throw new BadRequestException("An account with this email or phone number already exists.");
+      throw new BadRequestException("Email or phone already exists.");
     }
-  
+
     const hashedPassword = await bcrypt.hash(password, 12);
-  
-    // Determine allowed roles based on plan
-    const rolesPerPlan = {
-      free: ["user"],
-      bronze: ["landlord", "employer", "serviceProvider"],
-      silver: ["landlord", "employer", "serviceProvider"],
-      gold: ["landlord", "employer", "serviceProvider"],
-    };
-  
-    let roleNames = ["user"];
-  
 
-    
-    if (roles) {//Check if the user tried to request additional roles (premium roles) when signing up. If not, the system will skip the following validations and just assign the "user" role.
-      const validRoles = roles.filter((role) => rolesPerPlan[plan]?.includes(role));
-  
-
-      //Check if any of the user-submitted roles were invalid (not allowed under the selected plan). If the filtered roles list is shorter, it means some invalid roles were attempted — throw an error.
-      if (validRoles.length !== roles.length) {
-        throw new BadRequestException("Some roles are invalid for your plan.");
-      }
-  
-      if (validRoles.length > (plan === "bronze" ? 1 : plan === "silver" ? 2 : 3)) {
-        throw new BadRequestException(
-          `You can select up to ${plan === "bronze" ? 1 : plan === "silver" ? 2 : 3} roles for your plan.`
-        );
-      }
-  
-      roleNames = [...roleNames, ...validRoles];
-    }
-  
-    // Fetch role IDs
-    const roleRecords = await this.prisma.role.findMany({
-      where: { 
-        name: { 
-          in: roleNames 
-        } 
-      },
+    const planRecord = await this.prisma.plan.findUnique({
+      where: { name: plan },
     });
-  
-    if (roleRecords.length !== roleNames.length) {
-      throw new BadRequestException("One or more roles do not exist.");
+
+    if (!planRecord) {
+      throw new BadRequestException("Selected plan does not exist.");
     }
-  
-    // Create the user
+
+    const isPremium = plan !== "Free Plan";
+
+    // Assign default role only
+    const assignedRoles = ["registered_user"];
+
+    // Reject user-supplied roles unless admin-created
+    if (roles?.length) {
+      throw new BadRequestException(
+        "Roles can only be assigned by an admin after signup."
+      );
+    }
+
+    const roleRecords = await this.prisma.role.findMany({
+      where: { name: { in: assignedRoles } },
+    });
+
+    if (roleRecords.length !== assignedRoles.length) {
+      throw new BadRequestException("Required roles are missing in the system.");
+    }
+
     const user = await this.prisma.user.create({
       data: {
         firstName,
@@ -119,40 +114,33 @@ export class AuthService {
         email,
         password: hashedPassword,
         phone,
-        plan,
-        isPremium: plan !== "free",
+        planId: planRecord.id,
+        isPremium,
       },
     });
-  
-    // Assign roles
+
+    // Link the user to the default `registered_user` role
     await this.prisma.userRole.createMany({
       data: roleRecords.map((role) => ({
         userId: user.id,
         roleId: role.id,
       })),
     });
-  
-    // Fetch the user again, this time including roles
+
     const createdUser = await this.prisma.user.findUnique({
-      where: { 
-        id: user.id
-       },
+      where: { id: user.id },
       include: {
-         roles: {
-           include: { 
-            role: true } 
-          }
-         },
+        roles: { include: { role: true } },
+        plan: true,
+      },
     });
-  
-    // Extract role names
-    const userRoles = createdUser.roles.map((userRole) => userRole.role.name);
-  
-    let successMessage = "Your account was created successfully.";
-    if (plan === "bronze") successMessage = "Your bronze premium membership has been created successfully.";
-    else if (plan === "silver") successMessage = "Your silver premium membership has been created successfully.";
-    else if (plan === "gold") successMessage = "Your gold premium membership has been created successfully.";
-  
+
+    const userRoles = createdUser.roles.map((r) => r.role.name);
+    const message =
+      plan === "Free Plan"
+        ? "Your account was created successfully."
+        : `Your ${plan} premium membership has been created successfully.`;
+
     return {
       user: {
         id: createdUser.id,
@@ -160,51 +148,26 @@ export class AuthService {
         lastName: createdUser.lastName,
         email: createdUser.email,
         phone: createdUser.phone,
-        plan: createdUser.plan,
+        plan: createdUser.plan?.name,
         isPremium: createdUser.isPremium,
-        roles: userRoles, // Return roles properly
+        roles: userRoles,
       },
-      message: successMessage,
+      message,
       status: 201,
     };
   }
-  
 
-  // ------------------ LOGIN FUNCTION (Multi-Device) ------------------
+  /**
+   * Logs in a user and issues new access/refresh tokens
+   */
   async login(loginDto: LoginDto, deviceInfo?: string, ipAddress?: string) {
     const { email, password } = loginDto;
+    const user = await this.validateUser(email, password);
 
-    const user = await this.prisma.user.findUnique({
-      where: { 
-        email 
-      },
-      include: { 
-        roles: { 
-          include: { 
-            role: true 
-          } 
-        }
-       },
-    });
-
-    if (!user) {
-      throw new UnauthorizedException("Invalid email or password.");
-    }
-
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException("Invalid email or password.");
-    }
-
-    const userRoles = user.roles.map((userRole) => userRole.role.name);
-
-    // Generate Access Token
-    const access_token = this.generateAccessToken(user)
-
-    // Generate Refresh Token
+    const userRoles = user.roles.map((r) => r.role.name);
+    const access_token = this.generateAccessToken(user);
     const refresh_token = crypto.randomBytes(64).toString("hex");
 
-    // Store refresh token in DB
     await this.prisma.refreshToken.create({
       data: {
         userId: user.id,
@@ -225,137 +188,110 @@ export class AuthService {
         lastName: user.lastName,
         email: user.email,
         phone: user.phone,
-        plan: user.plan,
+        plan: user.plan?.name || "Free Plan",
         isPremium: user.isPremium,
         roles: userRoles,
       },
     };
   }
 
-  // ------------------ Generate AccessToken Function ------------------
+  /**
+   * Generates JWT access token with role/plan context
+   */
+  private generateAccessToken(
+    user: User & {
+      roles: { role: { name: string } }[];
+      plan?: { name: string } | null;
+    }
+  ): string {
+    const userRoles = user.roles.map((ur) => ur.role.name);
 
-  private generateAccessToken(user: User & { roles: { role: { name: string } }[] }): string {
-    const userRoles = user.roles.map((userRole) => userRole.role.name);
-  
     return this.jwtService.sign(
       {
         userId: user.id,
         email: user.email,
         firstName: user.firstName,
-        plan: user.plan,
+        plan: user.plan?.name || "Free Plan",
         roles: userRoles,
       },
       { expiresIn: "15m" }
     );
   }
-  
 
-   // ------------------ Logout Function ------------------
-
+  /**
+   * Logs user out by deleting refresh token
+   */
   async logout(refresh_token: string) {
-    try {
-      // Find and remove refresh token from DB
-      await this.prisma.user.updateMany({
-        where: { refreshToken: refresh_token },
-        data: { refreshToken: null },
-      });
-
-      return { message: "User logged out successfully" };
-    } catch (error) {
-      throw new UnauthorizedException("Failed to log out");
-    }
+    await this.prisma.refreshToken.deleteMany({
+      where: { token: refresh_token },
+    });
+    return { message: "User logged out successfully" };
   }
 
-  // ------------------ REFRESH ACCESS TOKEN FUNCTION ------------------
+  /**
+   * Issues new access and refresh tokens
+   */
   async refreshAccessToken(refreshToken: string) {
-  // 1. Find the refresh token in DB
-  const storedToken = await this.prisma.refreshToken.findUnique({
-    where: { token: refreshToken },
-    include: {
-      user: {
-        include: {
-          roles: {
-            select: {
-              role: {
-                select: { name: true },
-              },
-            },
+    const storedToken = await this.prisma.refreshToken.findUnique({
+      where: { token: refreshToken },
+      include: {
+        user: {
+          include: {
+            roles: { include: { role: true } },
+            plan: true,
           },
         },
       },
-    },
-  });
+    });
 
-  // 2. Token not found
-  if (!storedToken) {
-    throw new UnauthorizedException('Invalid refresh token.');
-  }
+    if (!storedToken) {
+      throw new UnauthorizedException("Invalid refresh token.");
+    }
 
-  // 3. Token expired
-  if (dayjs().isAfter(storedToken.expiresAt)) {
+    if (dayjs().isAfter(storedToken.expiresAt)) {
+      await this.prisma.refreshToken.delete({ where: { id: storedToken.id } });
+      throw new UnauthorizedException("Refresh token expired.");
+    }
+
+    const user = storedToken.user;
+    const newAccessToken = this.generateAccessToken(user);
+    const newRefreshToken = uuidv4();
+
+    await this.prisma.refreshToken.create({
+      data: {
+        token: newRefreshToken,
+        userId: user.id,
+        expiresAt: dayjs().add(30, "days").toDate(),
+        device: "Refreshed",
+        ipAddress: "Unknown",
+      },
+    });
+
     await this.prisma.refreshToken.delete({ where: { id: storedToken.id } });
-    throw new UnauthorizedException('Refresh token expired. Please log in again.');
+
+    return {
+      access_token: newAccessToken,
+      refresh_token: newRefreshToken,
+      user: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phone: user.phone,
+        plan: user.plan?.name || "Free Plan",
+        isPremium: user.isPremium,
+        roles: user.roles.map((r) => r.role.name),
+      },
+    };
   }
 
-  const user = storedToken.user;
-  const userRoles = user.roles.map((userRole) => userRole.role.name);
-
-  // 4. Generate new access token
-  const newAccessToken = this.jwtService.sign(
-    {
-      userId: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      plan: user.plan,
-      roles: userRoles,
-    },
-    { expiresIn: '15m' }
-  );
-
-  // 5. Generate a new refresh token (ROTATION)
-  const newRefreshToken = uuidv4();
-  const newRefreshTokenExpiry = dayjs().add(30, 'days').toDate();
-
-  // 6. Save the new refresh token in DB
-  await this.prisma.refreshToken.create({
-    data: {
-      token: newRefreshToken,
-      userId: user.id,
-      expiresAt: newRefreshTokenExpiry,
-    },
-  });
-
-  // 7. Delete the old refresh token from DB
-  await this.prisma.refreshToken.delete({
-    where: { id: storedToken.id },
-  });
-
-  // 8. Return new tokens and user profile
-  return {
-    access_token: newAccessToken,
-    refresh_token: newRefreshToken,
-    user: {
-      id: user.id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      phone: user.phone,
-      plan: user.plan,
-      isPremium: user.isPremium,
-      roles: userRoles,
-    },
-  };
-}
-
-  // ------------------ GET USER BY ID ------------------
+  /**
+   * Returns user by ID with role and plan details
+   */
   async getUserById(userId: string): Promise<User | null> {
     return this.prisma.user.findUnique({
       where: { id: userId },
-      include: { roles: true },
+      include: { roles: { include: { role: true } }, plan: true },
     });
   }
 }
-function uuidv4() {
-  throw new Error("Function not implemented.");
-}
-

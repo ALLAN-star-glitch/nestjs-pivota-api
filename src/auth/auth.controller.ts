@@ -11,8 +11,8 @@ import {
   Query,
 } from "@nestjs/common";
 import { AuthService } from "./auth.service";
-import { AuthGuard } from "@nestjs/passport"; // JWT Auth Guard
-import { FastifyReply } from "fastify"; // FastifyReply type
+import { AuthGuard } from "@nestjs/passport";
+import { FastifyReply } from "fastify";
 import {
   ApiOperation,
   ApiResponse,
@@ -21,9 +21,8 @@ import {
   ApiBearerAuth,
 } from "@nestjs/swagger";
 import { SignupDto } from "./dto/signup.dto";
-import { validate } from "class-validator";
 import { LoginDto } from "./dto/login.dto";
-import { $Enums } from "@prisma/client";
+import { validate } from "class-validator";
 
 @ApiTags("Auth")
 @Controller("auth")
@@ -35,69 +34,68 @@ export class AuthController {
   @ApiOperation({ summary: "Sign up a new user" })
   @ApiBody({ type: SignupDto })
   @ApiResponse({ status: 201, description: "User successfully signed up." })
-  @ApiResponse({ status: 400, description: "Bad request." })
-  async signup(@Body() signupDto: SignupDto) {
+  @ApiResponse({ status: 400, description: "Validation failed or bad input." })
+  async signup(@Body() signupDto: SignupDto, @Response() res: FastifyReply) {
     const errors = await validate(signupDto);
     if (errors.length > 0) {
-      return { status: "error", message: errors };
+      return res.status(HttpStatus.BAD_REQUEST).send({
+        status: "error",
+        message: "Validation failed",
+        errors,
+      });
     }
-    const resultData = await this.authService.signup(signupDto);
-    return {
-      status: resultData.status,
-      message: resultData.message,
-      user: resultData.user || null,
-    };
+
+    try {
+      const resultData = await this.authService.signup(signupDto);
+      return res.status(HttpStatus.CREATED).send(resultData);
+    } catch (err) {
+      return res
+        .status(HttpStatus.BAD_REQUEST)
+        .send({ status: "error", message: err.message });
+    }
   }
 
-// 🔹 Login Endpoint
-@HttpCode(HttpStatus.OK)
-@Post("login")
-@ApiOperation({ summary: "Login a user and return JWT tokens" })
-@ApiBody({ type: LoginDto, description: "User login credentials", required: true })
-@ApiResponse({ status: 200, description: "Login successful." })
-@ApiResponse({ status: 401, description: "Invalid credentials." })
-async login(@Body() loginDto: LoginDto, @Response() res: FastifyReply) {
-  try {
-    const { access_token, refresh_token, user } = await this.authService.login(loginDto);
+  // 🔹 Login Endpoint
+  @HttpCode(HttpStatus.OK)
+  @Post("login")
+  @ApiOperation({ summary: "Login a user and return JWT tokens" })
+  @ApiBody({ type: LoginDto })
+  @ApiResponse({ status: 200, description: "Login successful." })
+  @ApiResponse({ status: 401, description: "Invalid credentials." })
+  async login(@Body() loginDto: LoginDto, @Response() res: FastifyReply) {
+    try {
+      const { access_token, refresh_token, user } = await this.authService.login(
+        loginDto,
+        "Browser", // Optional: provide device info
+        "Unknown IP" // Optional: provide IP address
+      );
 
-    // Store Access Token in HTTP-only Cookie
-    res.setCookie("access_token", access_token, {
-      httpOnly: true,
-      secure: true,  // Ensure secure cookie transmission over HTTPS
-      sameSite: "none",  // Adjust based on your needs (strict or lax)
-      maxAge: 15 * 60 * 1000, // 15 minutes expiry for access token
-    });
+      res.setCookie("access_token", access_token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "none",
+        maxAge: 15 * 60 * 1000,
+      });
 
-
-    return res.send({
-      message: "Login successful",
-      user: {
-        id: user.id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        plan: user.plan,
-        phone: user.phone,
-        roles: user.roles,
-     
-      },
-      access_token,
-      refresh_token
-    });
-  } catch (error) {
-    return res
-      .status(HttpStatus.UNAUTHORIZED)
-      .send({ message: "Invalid credentials" });
+      return res.send({
+        message: "Login successful",
+        access_token,
+        refresh_token,
+        user,
+      });
+    } catch (error) {
+      return res
+        .status(HttpStatus.UNAUTHORIZED)
+        .send({ message: "Invalid credentials" });
+    }
   }
-}
 
   // 🔹 Refresh Access Token
   @HttpCode(HttpStatus.OK)
   @Post("refresh-token")
-  @ApiOperation({ summary: "Refresh the access token using a valid refresh token" })
-  @ApiBody({ description: "Send refresh token in request body", required: true })
-  @ApiResponse({ status: 200, description: "New access token generated." })
-  @ApiResponse({ status: 401, description: "Invalid or expired refresh token." })
+  @ApiOperation({ summary: "Refresh access token using a valid refresh token" })
+  @ApiBody({ schema: { example: { refresh_token: "your_refresh_token" } } })
+  @ApiResponse({ status: 200, description: "Access token refreshed successfully." })
   async refreshToken(@Body() body, @Response() res: FastifyReply) {
     const { refresh_token } = body;
 
@@ -107,84 +105,70 @@ async login(@Body() loginDto: LoginDto, @Response() res: FastifyReply) {
         .send({ message: "Refresh token required" });
     }
 
-    const newTokens = await this.authService.refreshAccessToken(refresh_token);
+    try {
+      const newTokens = await this.authService.refreshAccessToken(refresh_token);
 
-    if (!newTokens) {
+      res.setCookie("access_token", newTokens.access_token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "none",
+        maxAge: 15 * 60 * 1000,
+      });
+
+      return res.send({
+        message: "Token refreshed successfully",
+        access_token: newTokens.access_token,
+        refresh_token: newTokens.refresh_token,
+        user: newTokens.user,
+      });
+    } catch (error) {
       return res
         .status(HttpStatus.UNAUTHORIZED)
-        .send({ message: "Invalid or expired refresh token" });
+        .send({ message: error.message || "Invalid or expired refresh token" });
     }
-
-    // Store new access token in HTTP-only cookie
-    res.setCookie("access_token", newTokens.access_token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-      maxAge: 15 * 60 * 1000, // 15 minutes expiry
-    });
-
-    return res.send({
-      refresh_token: newTokens.refresh_token, // New refresh token for client
-    });
   }
 
-// 🔹 Get User by ID or Authenticated User
-@UseGuards(AuthGuard("jwt"))
-@Get("getUser")
-@ApiBearerAuth()
-@ApiOperation({ summary: "Get the current authenticated user or a user by ID" })
-@ApiResponse({ status: 200, description: "Successfully retrieved user data." })
-@ApiResponse({ status: 401, description: "Unauthorized." })
-async getUser(@Req() req: any,   @Response() res: FastifyReply, @Query("id") id?: string) {
-  try {
-    const accessToken = req.cookies["access_token"];
-    if (!accessToken) {
+  // 🔹 Get User Info
+  @UseGuards(AuthGuard("jwt"))
+  @Get("getUser")
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Get the authenticated user or user by ID (admin only)" })
+  @ApiResponse({ status: 200, description: "User data returned successfully." })
+  @ApiResponse({ status: 401, description: "Unauthorized request." })
+  async getUser(@Req() req: any, @Response() res: FastifyReply, @Query("id") id?: string) {
+    try {
+      const userId = id || req.user.userId;
+      const user = await this.authService.getUserById(userId);
+
+      if (!user) {
+        return res.status(HttpStatus.NOT_FOUND).send({ message: "User not found." });
+      }
+
+      return res.status(HttpStatus.OK).send({ user });
+    } catch (error) {
       return res
         .status(HttpStatus.UNAUTHORIZED)
-        .send({ message: "Access token not provided or expired" });
+        .send({ message: "Invalid or expired token" });
     }
-
-    let user: { firstName: string; lastName: string; email: string; password: string; phone: string; plan: $Enums.Plan; id: string; createdAt: Date; updatedAt: Date; isPremium: boolean; } | null;
-
-    if (id) {
-      // If an ID is provided, fetch the user by that ID
-      user = await this.authService.getUserById(id);
-    } else {
-      // Otherwise, fetch the authenticated user using the userId from the token
-      user = await this.authService.getUserById(req.user.userId);
-    }
-
-    if (!user) {
-      return res.status(HttpStatus.NOT_FOUND).send({ message: "User not found." });
-    }
-
-    return res.status(HttpStatus.OK).send({ user });
-  } catch (error) {
-    return res
-      .status(HttpStatus.UNAUTHORIZED)
-      .send({ message: "Invalid or expired token" });
   }
-}
-
 
   // 🔹 Logout Endpoint
   @HttpCode(HttpStatus.OK)
   @Post("logout")
-  @ApiOperation({ summary: "Logout user by revoking refresh token" })
-  @ApiBody({ description: "Send refresh token in request body", required: true })
-  @ApiResponse({ status: 200, description: "Successfully logged out." })
+  @ApiOperation({ summary: "Log out and revoke refresh token" })
+  @ApiBody({ schema: { example: { refresh_token: "your_refresh_token" } } })
+  @ApiResponse({ status: 200, description: "User logged out successfully." })
   async logout(@Body() body, @Response() res: FastifyReply) {
     const { refresh_token } = body;
 
     if (!refresh_token) {
       return res
         .status(HttpStatus.BAD_REQUEST)
-        .send({ message: "Refresh token required" });
+        .send({ message: "Refresh token is required" });
     }
 
     await this.authService.logout(refresh_token);
 
-    // Clear Access Token Cookie
     res.clearCookie("access_token", {
       httpOnly: true,
       secure: true,
