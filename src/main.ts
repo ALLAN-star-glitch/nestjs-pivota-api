@@ -18,7 +18,7 @@ async function bootstrap() {
 
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ https: httpsOptions }),   // { https: httpsOptions }}
+    new FastifyAdapter(),   // { https: httpsOptions }}
   );
 
 
