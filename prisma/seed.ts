@@ -205,7 +205,7 @@ const categoryRulesData: CategoryRuleSeed[] = [];
       firstName: "Super",
       lastName: "Admin",
       phone: "+254700000003",
-      password: "hashed_password_here",
+      password: "Brav1997@#",
       isPremium: true,
       planSlug: "platinum",
       roles: ["registered_user", "super_admin"],
