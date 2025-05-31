@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import * as bcrypt from "bcryptjs";
 const prisma = new PrismaClient();
 
 async function main() {
@@ -168,7 +169,7 @@ const categoryRulesData: CategoryRuleSeed[] = [];
   }
 
   // ========== USERS ==========
-  const usersData = [
+  const usersRaw = [
     {
       email: "user@example.com",
       firstName: "Default",
@@ -203,14 +204,21 @@ const categoryRulesData: CategoryRuleSeed[] = [];
     {
       email: "superadmin@example.com",
       firstName: "Super",
-      lastName: "Admin",
-      phone: "+254700000003",
+      lastName: "AdminAllan",
+      phone: "+254700000090",
       password: "Brav1997@#",
       isPremium: true,
       planSlug: "platinum",
       roles: ["registered_user", "super_admin"],
     },
   ];
+
+  const usersData = await Promise.all(
+  usersRaw.map(async (u) => ({
+    ...u,
+    password: await bcrypt.hash(u.password, 12),
+  }))
+);
 
   for (const u of usersData) {
     const user = await prisma.user.upsert({
