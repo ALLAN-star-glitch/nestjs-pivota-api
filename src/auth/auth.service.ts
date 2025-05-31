@@ -6,7 +6,7 @@ import {
 import * as bcrypt from "bcryptjs";
 import { JwtService } from "@nestjs/jwt";
 import * as crypto from "crypto";
-import dayjs from "dayjs";
+import * as dayjs from "dayjs";
 
 import { PrismaService } from "./prisma.service";
 import { User } from "@prisma/client";

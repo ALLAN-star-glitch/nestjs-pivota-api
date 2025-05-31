@@ -84,9 +84,10 @@ export class AuthController {
         user,
       });
     } catch (error) {
+      console.error(error)
       return res
         .status(HttpStatus.UNAUTHORIZED)
-        .send({ message: "Invalid credentials" });
+        .send({ message: error.message || "Invalid credentials" });
     }
   }
 

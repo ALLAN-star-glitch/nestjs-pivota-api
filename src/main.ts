@@ -28,7 +28,7 @@ async function bootstrap() {
   // Enable CORS for frontend
   app.register(fastifyCors, {
     origin: (origin, cb) => {
-      const allowedOrigins = ['https://pivota-expressjs-platform.onrender.com', 'https://localhost:3000'];
+      const allowedOrigins = ['https://pivota-expressjs-platform.onrender.com', 'https://localhost:3000', 'https://pivota.vercel.app'];
       if (!origin || allowedOrigins.includes(origin)) {
         cb(null, true);
       } else {
